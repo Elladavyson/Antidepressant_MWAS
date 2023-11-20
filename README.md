@@ -9,7 +9,7 @@ The MRS was trained using a LASSO model to select informative (CpGs) features fo
 
 ### Running the LASSO model 
 
-The LASSO model antidep_resid ~ DNAm was run using the biglasso R package. All non-zero features were then extracted with their corresponding weights. These are then saved as the weights file to be used in the calculation of MRS in external cohorts. 
+The LASSO model `antidep_resid ~ DNAm` was run using the biglasso R package. All non-zero features were then extracted with their corresponding weights. These are then saved as the weights file to be used in the calculation of MRS in external cohorts. 
 
 ## Calculating MRS in an external cohort 
 

@@ -75,10 +75,12 @@ This script will save a txt file of participants identifiers and their MRS, `{co
 Each cohort will have their own pipelines for associational models which can take into account relatedness/familial structure which may be unique to each cohort.
 
 *Phenotype* : Antidepressant exposure phenotype 
+
 *Predictor* : Antidepressant exposure MRS
+
 *Covariates*: Age, Sex, Methylation levels at AHRR(cg05575921), lymphocyte cell proportions, monocyte cell proportions, Technical covariates included in your cohort (in GS, we often include (1|Batch)), Top 10 genetic PCs*
 
-* Accounting for relatedness: Each cohort will have their own pipelines for best taking into account familial structures within their cohort, i.e for Twin Cohorts we anticipate perhaps the use of generalised estimation equations and `GEE` rather than a mixed linear model. Please do follow your own pipelines/versions for testing the association between the AD-exposure MRS and AD exposure, please include the same covariates and document the model/processes used.
+*Accounting for relatedness: Each cohort will have their own pipelines for best taking into account familial structures within their cohort, i.e for Twin Cohorts we anticipate perhaps the use of generalised estimation equations and `GEE` rather than a mixed linear model. Please do follow your own pipelines/versions for testing the association between the AD-exposure MRS and AD exposure, please include the same covariates and document the model/processes used.
 
 
 

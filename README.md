@@ -20,7 +20,7 @@ The LASSO model `antidep_resid ~ DNAm + covars` was run using the R package `big
 ### DNAm preprocessing 
 
 The MRS consists of a weighted sum of 212 CpGs (trained in GS). The MRS was trained using *standardised DNAm levels* 
-$$(X-mean)/standard deviation$$. Therefore we would like the MRS to be calculated also using standardised DNAm levels. 
+$$\frac{(X-mean)/standard deviation}$$. Therefore we would like the MRS to be calculated also using standardised DNAm levels. 
 
 **R** `process_DNAm_MRS.R` is a script which will read in the DNAm object (if saved as a .rds or .txt file) and will filter it to the CpGs in the MRS risk score and standardise (using `scale()`) the DNAm levels. Assumes that the DNAm object has rows as participants and columns as CpG names (alongside identifier column names). 
 

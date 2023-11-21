@@ -1,0 +1,38 @@
+#!/bin/bash
+#########################################################
+#$ -N resid_phenotype
+#$ -l h_rt=48:00:00
+#$ -l h_vmem=64G
+#$ -cwd
+#$ -e residualising_phenotypes
+#$ -o residualising_phenotypes
+#$ -M s2112198@ed.ac.uk
+#$ -m baes
+
+
+
+. /etc/profile.d/modules.sh
+module load igmm/apps/R/4.1.0
+module load igmm/apps/gcta/1.94.0beta
+
+
+SCRATCH='/exports/eddie/scratch/s2112198'
+pheno=$1
+
+OUTPUTDIR="/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/antidep_phenotypes/phenotypes/05_23_phenos/resid_phenos"
+
+#residualising the phenotype 
+
+gcta64 --reml --grm /exports/igmm/eddie/GenScotDepression/users/edavyson/QCdGS20K --pheno ${pheno}_nocolnames.pheno --out $OUTPUTDIR/${pheno}_resid_GCTA_pred_rand --reml-pred-rand
+
+gcta64 --reml --grm /exports/igmm/eddie/GenScotDepression/users/edavyson/QCdGS20K --pheno ${pheno}_nocolnames.pheno --out ${pheno}_resid_GCTA_pred_rand --reml-pred-rand
+
+# converting to OSCA format for running 
+
+awk '{print $1,$2,$NF}' $OUTPUTDIR/${pheno}_resid_GCTA_pred_rand.indi.blp | tail -n +1 > $OUTPUTDIR/residualised_${pheno}_nocolnames.pheno
+
+# to produce a tsv pheno file for OSCA 
+
+awk 'BEGIN {OFS="\t"} {print $1,$2,$NF}' $OUTPUTDIR/${pheno}_resid_GCTA_pred_rand.indi.blp | tail -n +1 > residualised_${pheno}_nocolnames.pheno
+
+

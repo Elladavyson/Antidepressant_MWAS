@@ -4,8 +4,6 @@
 
 ###############################################################################
 
-.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
-
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -78,7 +76,8 @@ print('Scaling the CpG columns')
 
 DNAm_MRS_std <- DNAm_MRS %>% mutate(across(-c(all_of(id_col)), scale))
 
-# pick a random CpG to plot the distribution?
+# Plotting the distribution of unstandardised and standardised M vals
+# for 3 randomly selected CpGs 
 
 cpgs <- sample(setdiff(names(DNAm_MRS_std), id_col), 3)
 DNAm_both <- rbind(
@@ -98,6 +97,7 @@ DNAm_MRS_std %>%
 )
 
 DNAm_dists <- ggplot(DNAm_both, aes(x = Mval, fill = CpG)) + geom_histogram() + facet_grid(Values~CpG) + ggtitle('Random sample of probes - standardisation')
+
 ggsave(filename=paste0(file_path_sans_ext(outfile), ".png"),DNAm_dists, width = 8, height = 6, device='png', dpi=300)
 
 

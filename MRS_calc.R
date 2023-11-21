@@ -22,7 +22,7 @@ option_list <- list(
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column in DNAm object", action = 'store'),
   make_option('--weights', type = 'character', default = 'big_lasso_450K_selfrep.txt', help = "Weights file provided for calculating MRS"),
   make_option('--pheno', type = 'character', help = 'File path to antidepressant exposure phenotype file'),
-  make_option('--out', type = 'character', help = 'The filepath for output', action = 'store')
+  make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )
 
 args = commandArgs(trailingOnly=TRUE)
@@ -32,15 +32,14 @@ DNAm_fp=opt$DNAm # DNAm file
 weights_fp=opt$weights # Weights file from GS
 id_col <- opt$id_column # Vector of identifier columns 
 pheno_fp=opt$pheno
-out_fp <- paste0(cohort,"_", opt$out) # output file path
+outdir <- paste0(cohort,"_", opt$outdir) # output file path
 
 # sink output to a text file with the same name as outpath with a '.log' extension
-
-sink(paste0(file_path_sans_ext(out_fp), ".log"))
+sink(paste0(out_dir, cohort, "_AD_MRS.log"))
 print(paste0('Calculating a MRS for ', cohort))
 print(paste0('Read in the processed DNAm file from: ', DNAm_fp))
 print(paste0('Read in the weights file from: ', weights_fp))
-print(paste0('Output to be saved in: ', out_fp))
+print(paste0('Output to be saved in: ', outdir))
 
 ###############################################################################
 
@@ -86,7 +85,7 @@ MRS_dist <- ggplot(MRS, aes(x = weighted_sum)) +
   labs(x = 'Methylation Risk Score', y = 'Count')+
   ggtitle(cohort)
 
-ggsave(paste0(file_path_sans_ext(out_fp), "_overalldist.png"), MRS_dist, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(out_dir, cohort, "_AD_MRS_overalldist.png"), MRS_dist, width = 8, height = 6, device='png', dpi=300)
 
 # looking at Distribution in AD exposed and AD not exposed (violin plots)
 
@@ -106,16 +105,17 @@ MRS_pheno_dists <- ggplot(ad_pheno_MRS, aes(x = weighted_sum, fill = as.factor(a
   labs(x = 'Methylation Risk Score', y = 'Count', fill = 'Self-reported AD use') +
   ggtitle(cohort)
 
-ggsave(paste0(file_path_sans_ext(out_fp), "_phenodist.png"), MRS_pheno_dists, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(out_dir, cohort, "_AD_MRS_phenodist.png"), MRS_pheno_dists, width = 8, height = 6, device='png', dpi=300)
 
 ###############################################################################
 
 # Saving the methylation risk score 
 
 ###############################################################################
-print(paste0('Saving the methylation risk score to ', out_fp))
+outfile <- paste0(outdir, cohort, '_AD_MRS.txt')
+print(paste0('Saving the methylation risk score to ', outfile))
 
 colnames(MRS)[2] <- 'AD_MRS'
-write.table(MRS, out_fp, row.names = F, quote = F)
+write.table(MRS, outfile, row.names = F, quote = F)
 
 

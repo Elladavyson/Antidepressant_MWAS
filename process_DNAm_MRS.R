@@ -103,7 +103,7 @@ DNAm_dists <- ggplot(DNAm_both, aes(x = Mval, fill = CpG)) +
   facet_grid(Values~CpG) +
   ggtitle(paste0(cohort, ': Random sample of probes - standardisation'))
 
-ggsave(filename=paste0(file_path_sans_ext(outfile), ".png"),DNAm_dists, 
+ggsave(filename=paste0(out_dir, cohort, "_DNAm_preproc_std.png"),DNAm_dists, 
        width = 8, height = 6, device='png', dpi=300)
 
 
@@ -112,8 +112,8 @@ ggsave(filename=paste0(file_path_sans_ext(outfile), ".png"),DNAm_dists,
 # Write out the filtered and standardised DNAm data 
 
 ###############################################################################
-outfile <- paste0(outdir, cohort, '_DNAm_preproc.txt')
-print(paste0('Writing the processed DNAm file to ', outfile))
+--
 
+outfile <- paste0(out_dir, cohort, "_DNAm_preproc.txt")
 write.table(DNAm_MRS_std, outfile, row.names = F, quote = F)
 sink()

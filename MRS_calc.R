@@ -90,8 +90,14 @@ ggsave(paste0(file_path_sans_ext(out_fp), "_overalldist.png"), MRS_dist, width =
 
 # looking at Distribution in AD exposed and AD not exposed (violin plots)
 
+if (endsWith(pheno_fp, '.csv')){
 ad_pheno <- read.csv(pheno_fp, header = T)
-ad_pheno <- ad_pheno%>% filter(!is.na(antidep)) # remove missing values if there are any 
+} else if (endsWith(pheno_fp, '.txt')) {
+  ad_pheno <- read.table(pheno_fp, header = T)
+} else {
+  stop('Unsupported phenotype file, please provide the phenotype as a .csv or .txt file')
+}
+ad_pheno <- ad_pheno %>% filter(!is.na(antidep)) # remove missing values if there are any 
 ad_pheno_MRS <- merge(ad_pheno, MRS, by = 'IID')
 
 MRS_pheno_dists <- ggplot(ad_pheno_MRS, aes(x = weighted_sum, fill = as.factor(antidep))) + 

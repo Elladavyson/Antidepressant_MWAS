@@ -13,16 +13,18 @@ The LASSO model `antidep_resid ~ DNAm + covars` was run using the R package `big
 
 ## Calculating MRS in an external cohort 
 
+### Shared files needed 
+
+`selfrep_lasso_probe_lst.txt` : Text file of the CpG 'cg' names used in calculating the MRS. 
+
 ### DNAm preprocessing 
 
-*Optional*: As the project works with cohorts with EPIC and/or 450K array, we have restricted the MRS to just the overlapping CpGs on the 450K and EPIC arrays (n = 365, 912). A list of the CpGs are saved in the file "", and can be used to filter down the DNAm object (to reduce processing time) prior to the MRS calculation. 
+The MRS consists of a weighted sum of 212 CpGs (trained in GS). The MRS was trained using *standardised DNAm levels* : (X-mean)/standard deviation. Therefore we would like the MRS to be calculated also using standardised DNAm levels. 
 
-Our MRS was trained on standardised DNAm levels: (X-mean)/standard deviation. Therefore we would ideally like the MRS to be calculated in external cohorts also on standardised methylation levels. 
+**R** `process_DNAm_MRS.R` is a script which will read in the DNAm object (if saved as a .rds or .txt file) and will filter it to the CpGs in the MRS risk score and standardise (using `scale()`) the DNAm levels. Assumes that the DNAm object has rows as participants and columns as CpG names (alongside identifier column names). 
 
-Depending on how the DNAm data is stored, it can be standardised in different ways (example scripts for each).  
+**OSCA**  `process_DNAm_OSCA.sh` is a template script to select and standardised DNAm object from BOD files (OSCA format). Change DNAm_filename and outfile_name accordingly. Assumes the DNAm object has rows as participants and columns as CpG names.
 
-**R**: Using the function scale()
-**OSCA**: Using the flag --std-probe
 
 ### Calculating MRS 
 

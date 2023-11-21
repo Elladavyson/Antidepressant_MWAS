@@ -16,10 +16,11 @@ parse <- OptionParser()
 
 # setting up options for the filepaths to the correct files
 option_list <- list(
+  make_option('--cohort', type='character', help="Cohort, ideally no spaces (for graphs and documentation)", action='store'),
   make_option('--DNAm', type='character', help="The filepath for DNAm file", action='store'),
   make_option('--probes', type = 'character', help= "The filepath for the list of probes for the MRS", action = 'store'),
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column", action = 'store'),
-  make_option('--out', type = 'character', help = 'The filepath for output', action = 'store')
+  make_option('--out_dir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )
 
 args = commandArgs(trailingOnly=TRUE)
@@ -27,16 +28,17 @@ opt <- parse_args(OptionParser(option_list=option_list), args=args)
 
 # setting up arguments from the options 
 print('Setting up the options')
+cohort <- opt$cohort
 DNAm_filepath=opt$DNAm # DNAm file
 probes_filepath=opt$probes # Probe list 
 id_col <- opt$id_column # Vector of identifier columns 
-outfile <- opt$out
+out_dir <- opt$out_dir
 
-sink(paste0(file_path_sans_ext(outfile), ".log"))
+sink(paste0(out_dir, cohort, "_DNAm_preproc.log"))
 print(paste0('DNAm file from : ', DNAm_filepath))
 print(paste0('List of probes from : ', probes_filepath))
 print(paste0('ID column : ', id_col))
-print(paste0('Output to be saved : ', outfile))
+print(paste0('Output to be saved in : ', out_dir))
 
 ###############################################################################
 
@@ -96,9 +98,13 @@ DNAm_MRS_std %>%
   mutate(Values = 'Standardised')
 )
 
-DNAm_dists <- ggplot(DNAm_both, aes(x = Mval, fill = CpG)) + geom_histogram() + facet_grid(Values~CpG) + ggtitle('Random sample of probes - standardisation')
+DNAm_dists <- ggplot(DNAm_both, aes(x = Mval, fill = CpG)) +
+  geom_histogram() + 
+  facet_grid(Values~CpG) +
+  ggtitle(paste0(cohort, ': Random sample of probes - standardisation'))
 
-ggsave(filename=paste0(file_path_sans_ext(outfile), ".png"),DNAm_dists, width = 8, height = 6, device='png', dpi=300)
+ggsave(filename=paste0(file_path_sans_ext(outfile), ".png"),DNAm_dists, 
+       width = 8, height = 6, device='png', dpi=300)
 
 
 ###############################################################################
@@ -106,6 +112,7 @@ ggsave(filename=paste0(file_path_sans_ext(outfile), ".png"),DNAm_dists, width = 
 # Write out the filtered and standardised DNAm data 
 
 ###############################################################################
+outfile <- paste0(outdir, cohort, '_DNAm_preproc.txt')
 print(paste0('Writing the processed DNAm file to ', outfile))
 
 write.table(DNAm_MRS_std, outfile, row.names = F, quote = F)

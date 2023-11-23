@@ -14,9 +14,11 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 `process_DNAm_MRS.R` : Rscript for filtering and standardising DNAm data  DNAm data (in .rds/.txt format).
 
+*NB* This script assumes that the DNAm data has already been QC'd per cohort (i.e low bead count, high detection P value, mismatching sex and chromosome. 
+
 `process_DNAm_OSCA.sh`: Shell script for filtering and standardising DNAm data (in BOD format).
 
-`MRS_calc.R`: Rscript to calculate antidepressant exposure MRS using GS weights.
+`MRS_calc.R`: Rscript to calculate antidepressant exposure MRS using GS weights. The MRS is calculated as a weighted sum of 212 CpGs (shared as data files). The CpGs were trained on the overlapping CpGs from the 450K and EPIC arrays, so therefore should be present regardless of which array was used.
 
 `MRS_assoc.R`: Rscript to run GLMM of antidepressant exposure ~ MRS + covariates (age, sex, WBC proportions, Batch, AHRR methylation and genetic PCs).
 

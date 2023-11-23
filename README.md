@@ -28,7 +28,7 @@ The residuals from this analysis were then taken forward into the LASSO model.
 ### DNAm preprocessing 
 
 The MRS consists of a weighted sum of 212 CpGs (trained in GS). The MRS was trained using *standardised DNAm levels* 
-$$\(X-mean)\over Std $$
+$$\X_{std} = (X-mean)\over Std $$
 
 Therefore we would like the MRS to be calculated also using standardised DNAm levels. 
 
@@ -46,10 +46,19 @@ Arguments:
 
 *--out_dir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
 
-This script will produce a text file of the 212 standardised CpGs required for making the MRS, in a file `{cohort}_DNAm_preproc.txt`. As a sanity check, it also produces a graph of distributions from three randomly selected CpGs to overview their distributions pre and post scaling `{cohort}_DNAm_preproc_std.png`. 
-
 **OSCA** : `process_DNAm_OSCA.sh` is a template script to select and standardised DNAm object from BOD files (OSCA format). Change DNAm_filename and outfile_name accordingly. Assumes the DNAm object has rows as participants and columns as CpG names.
 
+#### Output 
+
+**R script** `process_DNAm_MRS.R`:
+
+`{cohort}_DNAm_preproc.txt`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS
+
+`{cohort}_DNAm_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
+
+**OSCA** `process_DNAm_OSCA.sh`
+
+`{cohort}_DNAm_preproc`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS. 
 
 ### Calculating MRS 
 
@@ -69,11 +78,17 @@ Arguments:
 
 *--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
 
-This script will save a txt file of participants identifiers and their MRS, `{cohort}_AD_MRS.txt`. It should also save a histogram of the MRS distribution in everyone `{cohort}_AD_MRS_overalldist.png`, and another which has distributions for AD non-exposed and AD-exposed individuals in your cohort `{cohort}_AD_MRS_phenodist.png`. 
+#### OutPut 
+
+`{cohort}_AD_MRS.txt`: a txt file of participants identifiers and their MRS ('AD_MRS')
+
+`{cohort}_AD_MRS_overalldist.png`: A histogram of the MRS distribution in everyone in the cohort
+
+`{cohort}_AD_MRS_phenodist.png`: A histogram of distributions for AD non-exposed and AD-exposed individuals in the cohort
 
 ### Associational models 
 
-`MRS_assoc.R` is a general script template a generalised mixed linear model (glmm) to test the association of the MRS with antidepressant exposure phenotype. Key elements of the model: 
+Key elements of the model: 
 
 **Phenotype** : Antidepressant exposure phenotype 
 
@@ -83,6 +98,22 @@ This script will save a txt file of participants identifiers and their MRS, `{co
 
 *A note on accounting for relatedness*: Each cohort will have their own pipelines to account for relatedness within their cohorts, i.e Twin Cohorts. In this case, we welcome the use of in-house pipelines and models for testing the association of Phenotype ~ MRS, including the key covariates detailed above. If not using the example above, please do document your model and analysis. 
 
+#### General Output 
+
+We would like the coefficients of the model, alongside the standard errors, Z scores and P values. 
+
+We would also like the McFaddens pseudo-R2 to assess the wellness of fit:
+
+This requires the running of a *null* model, meaning the exact same model parameters just **without the AD MRS**
+
+The McFaddens pseudo R2 is then calculated as a ratio of the loglikelihood of the full (including MRS) and null (excluding MRS) model: 
+
+$$\McFaddens pseudo-R^{2} = 1-(LogLik(full_model)/LogLik(null_model) $$
+
+
+
+`MRS_assoc.R` is a general script template a generalised mixed linear model (glmm) to test the association of the MRS with antidepressant exposure phenotype. 
+
 *--cohort*: Cohort name, e.g 'GS' or 'LBC1936'
 
 *--id_column*: The column name of the identifier column (default == IID)
@@ -91,27 +122,39 @@ This script will save a txt file of participants identifiers and their MRS, `{co
 
 Column names: 
 
-Identifier column(s)= 'IID' ('FID')
+**Identifier column(s)** = 'IID' ('FID')
 
-MRS column = 'AD_MRS'
+**MRS column** = 'AD_MRS'
 
 *--pheno*: The filepath to the AD phenotype file
 
 Column names: 
 
-Identifier column = 'IID'
-Phenotype column = 'antidep', coded as **0**-**No AD exposure** and **1**- **AD exposure**
+**Identifier column(s)** = 'IID' ('FID')
+**Phenotype column** = 'antidep', coded as **0**-**No AD exposure** and **1**- **AD exposure**
 
 *--covs*: The filepath to the covariate file (format: Identifier columns and covariates to include in the model). 
 
 Column names: 
-Age = 'age'
-Sex = 'sex_coded' (0/1)
-AHRR= 'cg05575921'
-Monocyte cell proportions = 'Mono'
-Lymphocyte cell proportions = 'lymphocytes'
-Batch = 'Batch'
-PCS = 'C1-10'
 
+**Age** = 'age'
+
+**Sex** = 'sex_coded' (0/1)
+
+**AHRR**= 'cg05575921'
+
+**Monocyte cell proportions** = 'Mono'
+
+**Lymphocyte cell proportions** = 'lymphocytes'
+
+**Batch = 'Batch'**
+
+**PCS = 'C1-10'**
+
+#### Output 
+
+`{cohort}_MRS_AD_coefficients.txt`: A table of the coefficients (Betas), Standard Errors, Z scores and P values from the association model results, extracted using `summary(assoc_mod)$coefficients %>% as.data.frame()`
+
+`{cohort}_MRS_AD_logL.txt`: A table of the log likelihood of the model including a DNAm predictor (`assoc_mod`), and when not including the predictor (`null_mod`), and the McFaddans R2 `mcf_r2` calculated as `1-logLik(assoc_mod)/logLik(null_mod)`. 
 
 If you have any questions, please contact me at s2112198@ed.ac.uk OR e.e.davyson@sms.ed.ac.uk

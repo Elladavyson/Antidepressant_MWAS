@@ -19,7 +19,7 @@ option_list <- list(
   make_option('--cohort', type='character', help="Cohort, ideally no spaces (for graphs and documentation)", action='store'),
   make_option('--DNAm', type='character', help="The filepath for processed DNAm file", action='store'),
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column in DNAm object", action = 'store'),
-  make_option('--weights', type = 'character', default = 'big_lasso_450K_selfrep.txt', help = "Weights file provided for calculating MRS"),
+  make_option('--weights', type = 'character', default = 'GS_AD_MRS_weights.txt', help = "Weights file provided for calculating MRS"),
   make_option('--pheno', type = 'character', help = 'File path to antidepressant exposure phenotype file'),
   make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )

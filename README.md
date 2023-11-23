@@ -1,9 +1,8 @@
 # AD_MRS
 Repository for antidepressant MRS calculation in external cohorts. 
 
-## Folders 
 
-### GS training (training DNAm score in GS)
+## GS training (training DNAm score in GS) *Scripts for reference* 
 
 `resid_pheno_GCTA.txt`: Residualising AD exposure phenotype on the GRM using GCTA (BLUP).
 
@@ -11,7 +10,7 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 `Lasso_regression_DNAm.R`: Running big lasso model of `antidepressant exposure (residuals) ~ DNAm` to get CpGs and corresponding weights for the AD MRS. 
 
-### MRS analysis (Applying DNAm scores to external cohorts)
+### MRS analysis (Applying DNAm scores to external cohorts) *Scripts to run*
 
 `process_DNAm_MRS.R` : Rscript for filtering and standardising DNAm data  DNAm data (in .rds/.txt format).
 

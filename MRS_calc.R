@@ -32,10 +32,10 @@ DNAm_fp=opt$DNAm # DNAm file
 weights_fp=opt$weights # Weights file from GS
 id_col <- opt$id_column # Vector of identifier columns 
 pheno_fp=opt$pheno
-outdir <- paste0(cohort,"_", opt$outdir) # output file path
+outdir <- opt$outdir
 
 # sink output to a text file with the same name as outpath with a '.log' extension
-sink(paste0(out_dir, cohort, "_AD_MRS.log"))
+sink(paste0(outdir, cohort, "_AD_MRS.log"))
 print(paste0('Calculating a MRS for ', cohort))
 print(paste0('Read in the processed DNAm file from: ', DNAm_fp))
 print(paste0('Read in the weights file from: ', weights_fp))
@@ -85,7 +85,7 @@ MRS_dist <- ggplot(MRS, aes(x = weighted_sum)) +
   labs(x = 'Methylation Risk Score', y = 'Count')+
   ggtitle(cohort)
 
-ggsave(paste0(out_dir, cohort, "_AD_MRS_overalldist.png"), MRS_dist, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(outdir, cohort, "_AD_MRS_overalldist.png"), MRS_dist, width = 8, height = 6, device='png', dpi=300)
 
 # looking at Distribution in AD exposed and AD not exposed (violin plots)
 
@@ -105,7 +105,7 @@ MRS_pheno_dists <- ggplot(ad_pheno_MRS, aes(x = weighted_sum, fill = as.factor(a
   labs(x = 'Methylation Risk Score', y = 'Count', fill = 'Self-reported AD use') +
   ggtitle(cohort)
 
-ggsave(paste0(out_dir, cohort, "_AD_MRS_phenodist.png"), MRS_pheno_dists, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(outdir, cohort, "_AD_MRS_phenodist.png"), MRS_pheno_dists, width = 8, height = 6, device='png', dpi=300)
 
 ###############################################################################
 

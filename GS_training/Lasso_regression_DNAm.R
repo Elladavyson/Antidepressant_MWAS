@@ -145,7 +145,7 @@ logging('Script done!', timing = TRUE)
 #colnames(results) <- c('CpG', 'Weight')
 #results <- results[-1,] # remove the intercept row (don't need?)
 #write.table(results, 'GS_AD_MRS_weights.txt', row.names= F, quote = F)
-#readr::write_lines(results$Weight, 'MRS_probes.txt')
+#readr::write_lines(results$CpG, 'MRS_probes.txt')
 
 
 

@@ -9,7 +9,7 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 `pheno_covs_resid_lmer.R`: Regressing the AD-GRM residuals on covariates including in MWAS (age, sex, WBC proportions, Batch and AHRR methylation).
 
-``
+`Lasso_regression_DNAm.R`: Running big lasso model of `antidepressant exposure (residuals) ~ DNAm` to get CpGs and corresponding weights for the AD MRS. 
 
 ### MRS analysis (Applying DNAm scores to external cohorts)
 

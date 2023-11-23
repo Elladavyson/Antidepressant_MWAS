@@ -14,7 +14,7 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 `process_DNAm_MRS.R` : Rscript for filtering and standardising DNAm data  DNAm data (in .rds/.txt format).
 
-*NB* This script assumes that the DNAm data has already been QC'd per cohort (i.e low bead count, high detection P value, mismatching sex and chromosome).
+*NB* This script assumes that the DNAm data has already been QC'd per cohort (i.e low bead count, high detection P value, mismatching sex and chromosome). The script and MRS is also calculated using M values.
 
 `process_DNAm_OSCA.sh`: Shell script for filtering and standardising DNAm data (in BOD format).
 

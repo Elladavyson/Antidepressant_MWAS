@@ -28,7 +28,7 @@ The residuals from this analysis were then taken forward into the LASSO model.
 ### DNAm preprocessing 
 
 The MRS consists of a weighted sum of 212 CpGs (trained in GS). The MRS was trained using *standardised DNAm levels* 
-$$ X_{std} = \(X-mean)\over Std $$
+$$ X_{std} $$ = $$ \(X-mean)\over Std $$
 
 Therefore we would like the MRS to be calculated also using standardised DNAm levels. 
 

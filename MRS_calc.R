@@ -4,7 +4,6 @@
 
 ###############################################################################
 .libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
-
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -48,10 +47,16 @@ print(paste0('Output to be saved in: ', outdir))
 ###############################################################################
 
 DNAm <- read_table(DNAm_fp) %>% as.data.frame()
-weights <- read.table(weights_fp, header = F) 
-colnames(weights) <- c('CpG', 'Weight')
-weights <- weights[-1,]
+print(paste0('The DNAm file has data for ', nrow(DNAm), ' participants and ', DNAm %>% select(starts_with("cg")) %>% ncol(), " CpG sites"))
+weights <- read.table(weights_fp, header = T) 
+print(paste0('The weights file has weights for ', nrow(weights), ' CpGs'))
 
+if(DNAm %>% select(starts_with("cg")) %>% ncol() != nrow(weights)){
+  print(paste0('Number of probes read in for DNAm file (', DNAm %>% select(starts_with("cg")) %>% ncol(),
+  ') does not match the number of weights provided (', nrow(weights), ')'))
+} else {
+  print(paste0('Number of probes read in for DNAm matches the number of weights provided: n = ', nrow(weights)))
+}
 ###############################################################################
 
 # Calculate the MRS 
@@ -65,9 +70,14 @@ DNAm_long <- DNAm %>%
 print('Merging with the weights')
 DNAm_long <- merge(DNAm_long, weights, by = 'CpG')
 print('Calculating the MRS')
+
+# Group by ID
+# and then calculate a weighted sum of all the CpGs per IID
+
 MRS <- DNAm_long %>% group_by(!!sym(id_col)) %>%
   summarise(weighted_sum = sum(Weight*Mval, na.rm = T)) %>% as.data.frame()
 
+print(paste0('MRS calculated for ', nrow(MRS), ' people in the ', cohort, ' cohort'))
 
 ###############################################################################
 
@@ -75,7 +85,7 @@ MRS <- DNAm_long %>% group_by(!!sym(id_col)) %>%
 
 ###############################################################################
 
-print('Plotting distributions')
+print(paste0('Plotting distributions across the whole ', cohort, ' sample'))
 
 # Distribution of the MRS across the DNAm cohort 
 
@@ -96,9 +106,24 @@ ad_pheno <- read.csv(pheno_fp, header = T)
 } else {
   stop('Unsupported phenotype file, please provide the phenotype as a .csv or .txt file')
 }
+
+if('antidep' %in% colnames(ad_pheno) == FALSE){
+  stop('No antidep column in the phenotype file')
+} else {
+  print('antidep column in the phenotype file')
+}
+
 ad_pheno <- ad_pheno %>% filter(!is.na(antidep)) # remove missing values if there are any 
+
+print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ': Number of cases: ',
+             nrow(ad_pheno %>% 
+                    filter(antidep==1)), 
+             ' Number of controls: ',
+             nrow(ad_pheno%>% 
+                    filter(antidep==0))))
 ad_pheno_MRS <- merge(ad_pheno, MRS, by = 'IID')
 
+print('Plotting MRS distributions for AD exposure cases and controls ')
 MRS_pheno_dists <- ggplot(ad_pheno_MRS, aes(x = weighted_sum, fill = as.factor(antidep))) + 
   geom_histogram(alpha = 0.8) + 
   theme_minimal() + 

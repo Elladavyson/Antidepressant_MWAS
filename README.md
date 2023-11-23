@@ -72,20 +72,14 @@ This script will save a txt file of participants identifiers and their MRS, `{co
 
 ### Associational models 
 
-*Accounting for relatedness: Each cohort will have their own pipelines for best taking into account familial structures within their cohort, i.e for Twin Cohorts we anticipate perhaps the use of generalised estimation equations and `GEE` rather than a mixed linear model. Please do follow your own pipelines/versions for testing the association between the AD-exposure MRS and AD exposure, please include the same covariates and document the model/processes used.
+In the following example and script provided, we are using a general mixed linear model (glmm) to test the association of the MRS with antidepressant exposure phenotype. Key elements of the model: 
 
-In the following example and script provided, we are using a mixed linear model (lmer) to test the association, modelling Batch as a random effect and covarying for population structure by including the top 10 genetic PCs. 
+**Phenotype** : Antidepressant exposure phenotype 
 
-*Phenotype* : Antidepressant exposure phenotype 
+**Predictor** : Antidepressant exposure MRS
 
-*Predictor* : Antidepressant exposure MRS
+**Key Covariates**: Age, Sex, Methylation levels at AHRR(cg05575921), lymphocyte cell proportions, monocyte cell proportions, Technical covariates as a random effect (in GS, we often include (1|Batch)), *If related cohort* Top 10 genetic PCs/Kinship matrix 
 
-*Covariates*: Age, Sex, Methylation levels at AHRR(cg05575921), lymphocyte cell proportions, monocyte cell proportions, Technical covariates included in your cohort (in GS, we often include (1|Batch)), Top 10 genetic PCs
-
-
-
-
-
-
+*A note on accounting for relatedness*: Each cohort will have their own pipelines to account for relatedness within their cohorts, i.e Twin Cohorts. In this case, we welcome the use of in-house pipelines and models for testing the association of Phenotype ~ MRS, including the key covariates detailed above. If not using the example above, please do document your model and analysis. 
 
 If you have any questions, please contact me at s2112198@ed.ac.uk OR e.e.davyson@sms.ed.ac.uk

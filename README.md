@@ -17,7 +17,7 @@ The residuals from this analysis were then taken forward into the LASSO model.
 
 `Lasso_regression_DNAm`: The LASSO model `antidep_resid ~ DNAm + covars` was run using the R package `biglasso`. All non-zero features were then extracted with their corresponding weights. These are then saved as the weights file to be used in the calculation of MRS in external cohorts. 
 
-## Calculating MRS in an external cohort 
+## Calculating MRS in an external cohorts
 
 ### Shared files needed 
 
@@ -32,7 +32,9 @@ $$X_{std}={(X-mean)\over Std}$$
 
 Therefore we would like the MRS to be calculated also using standardised DNAm levels. 
 
-**R**: `process_DNAm_MRS.R` is a script which will read in the DNAm object (if saved as a .rds or .txt file) and will filter it to the CpGs in the MRS risk score and standardise (using `scale()`) the DNAm levels. Assumes that the DNAm object has rows as participants and columns as CpG names (alongside identifier column names). 
+**R**: 
+
+`process_DNAm_MRS.R`: which will read in the DNAm object (if saved as a .rds or .txt file) and will filter it to the CpGs in the MRS risk score and standardise (using `scale()`) the DNAm levels. Assumes that the DNAm object has rows as participants and columns as CpG names (alongside identifier column names). 
 
 Arguments: 
 
@@ -44,7 +46,9 @@ Arguments:
 
 *--id_column* : The name of the identifier column in the data e.g 'IID'
 
-*--out_dir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
+*--outdir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
+
+**Example** : Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes --probes selfrep_lasso_probe_lst.txt --id_column IID --out_dir /Users/results/MRS_output/
 
 **OSCA** : `process_DNAm_OSCA.sh` is a template script to select and standardised DNAm object from BOD files (OSCA format). Change DNAm_filename and outfile_name accordingly. Assumes the DNAm object has rows as participants and columns as CpG names.
 
@@ -62,7 +66,7 @@ Arguments:
 
 ### Calculating MRS 
 
-The R script `MRS_calc.R` allows you to calculate MRS for participants. 
+The R script `MRS_calc.R`: will calculate MRS for participants. 
 
 Arguments: 
 
@@ -77,6 +81,8 @@ Arguments:
 *--pheno* : The file path to the antidepressant exposure phenotype file for your cohort. Script can read in either a .csv, or .txt file and should follow a format of `FID`(Optional), `IID` (Required), and `antidep`, with `antidep` being coded as 0 (no exposure) and 1 (exposure).  e.g /Users/data/phenos/AD_pheno.csv
 
 *--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
+
+**Example** : Rscript MRS_calc.R --cohort GS --DNAm GS_DNAm_preproc.txt --weights big_lasso_450K_selfrep.txt --id_column IID --pheno selfrep_pheno3_methyl.csv --out_dir /Users/results/MRS_output/
 
 #### OutPut 
 
@@ -100,25 +106,21 @@ Key elements of the model:
 
 #### General Output 
 
-We would like the coefficients of the model, alongside the standard errors, Z scores and P values. 
-
-We would also like the McFaddens pseudo-R2 to assess the wellness of fit:
-
-This requires the running of a *null* model, meaning the exact same model parameters just **without the AD MRS**
+We would like the coefficients of the model, alongside the standard errors, Z scores, P values and the McFaddens pseudo-R2 to assess the wellness of fit. To calculate McFaddens pseudo-R2, we need to model a *null* model, which is, the same model parameters as before but without the predictor of interest (**without the AD MRS**).
 
 The McFaddens pseudo R2 is then calculated as a ratio of the loglikelihood of the full (including MRS) and null (excluding MRS) model: 
 
 $$pseudo R^{2}=1-({LogLik(full model)\over LogLik(nullmodel)})$$
 
+#### Example Script 
 
-
-`MRS_assoc.R` is a general script template a generalised mixed linear model (glmm) to test the association of the MRS with antidepressant exposure phenotype. 
+`MRS_assoc.R` is a general script which tests the association of the MRS  with antidepressant exposure phenotype using a generalised mixed linear model (glmm).
 
 *--cohort*: Cohort name, e.g 'GS' or 'LBC1936'
 
 *--id_column*: The column name of the identifier column (default == IID)
 
-*--mrs*: The filepath to the AD MRS file (made using MRS_calc.R, format nx(2/3), identifier column and MRS column named `AD_MRS`)
+*--mrs*: The filepath to the AD MRS file (made using MRS_calc.R,`{cohort}_AD_MRS.txt`, MRS column named `AD_MRS`)
 
 Column names: 
 
@@ -151,10 +153,16 @@ Column names:
 
 **PCS = 'C1-10'**
 
+*--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
+
+**Example** : Rscript MRS_assoc.R --cohort GS --id_column IID --mrs GS_AD_MRS.txt --pheno selfrep_pheno3_--covs GS_all_covs_pcs_tst.txt --id_column IID --pheno selfrep_pheno3_methyl.csv --outdir /Users/results/MRS_output/
+
 #### Output 
 
 `{cohort}_MRS_AD_coefficients.txt`: A table of the coefficients (Betas), Standard Errors, Z scores and P values from the association model results, extracted using `summary(assoc_mod)$coefficients %>% as.data.frame()`
 
 `{cohort}_MRS_AD_logL.txt`: A table of the log likelihood of the model including a DNAm predictor (`assoc_mod`), and when not including the predictor (`null_mod`), and the McFaddans R2 `mcf_r2` calculated as `1-logLik(assoc_mod)/logLik(null_mod)`. 
+
+### Contact
 
 If you have any questions, please contact me at s2112198@ed.ac.uk OR e.e.davyson@sms.ed.ac.uk

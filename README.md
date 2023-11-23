@@ -21,7 +21,7 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 `MRS_assoc.R`: Rscript to run GLMM of antidepressant exposure ~ MRS + covariates (age, sex, WBC proportions, Batch, AHRR methylation and genetic PCs).
 
-*NB* The `MRS_assoc.R` script is a template for modelling the association between the phenotype and MRS, however we anticipate the use of other models to account for population and family structure of individual cohorts. Please return the coefficients and statistics of the model alongside McFadden's pseudo-R2 (more detail in the README.md in this folder). 
+*NB* The `MRS_assoc.R` script is a template for modelling the association between the phenotype and MRS, however we anticipate the use of other models to account for population and family structure of individual cohorts. In this case, please follow usual pipelines and return the coefficients and statistics of the model, McFadden's pseudo-R2 (more detail in the README.md in this folder), and documentation of the model used.
 
 ### Contact
 

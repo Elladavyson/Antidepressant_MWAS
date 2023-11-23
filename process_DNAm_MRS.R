@@ -3,7 +3,7 @@
 # Set up libraries and options/files
 
 ###############################################################################
-
+.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -56,7 +56,7 @@ if (endsWith(DNAm_filepath, ".rds")){
 
 probes <- readr::read_lines(probes_filepath)
 print('Read in files')
-print(paste0('Number of probes in DNAm file: ',ncol(DNAm)))
+print(paste0('Number of probes in DNAm file: ',DNAm %>% select(starts_with("cg")) %>% ncol()))
 
 ###############################################################################
 
@@ -66,7 +66,7 @@ print(paste0('Number of probes in DNAm file: ',ncol(DNAm)))
 print('Filter to just the MRS CpGs')
 DNAm_MRS <- DNAm %>% select(c(all_of(id_col), intersect(names(DNAm), probes)))
 
-print(paste0('Filtered to ', ncol(DNAm_MRS)-1, ' CpGs')) # not counting the ID column
+print(paste0('Filtered to ', DNAm %>% select(starts_with("cg")) %>% ncol(), ' CpGs')) 
 rm(DNAm) # remove large methylation object 
 
 ###############################################################################

@@ -3,7 +3,7 @@
 # Set up libraries and options/files
 
 ###############################################################################
-
+.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -112,7 +112,6 @@ ggsave(filename=paste0(out_dir, cohort, "_DNAm_preproc_std.png"),DNAm_dists,
 # Write out the filtered and standardised DNAm data 
 
 ###############################################################################
---
 
 outfile <- paste0(out_dir, cohort, "_DNAm_preproc.txt")
 write.table(DNAm_MRS_std, outfile, row.names = F, quote = F)

@@ -60,7 +60,7 @@ Arguments:
 
 *--DNAm* : The file path for the preprocessed DNAm file from `process_DNAm_MRS.R`, e.g /Users/data/DNAm/AD_MRS/GS_DNAm_preproc.txt
 
-*--id_column* : The column name of the identifier column
+*--id_column* : The column name of the identifier column (default == IID)
 
 *--weights* : The file path for the MRS weights files provided by GS e.g /Users/data/DNAm/big_lasso_450K_selfrep.txt
 
@@ -72,7 +72,7 @@ This script will save a txt file of participants identifiers and their MRS, `{co
 
 ### Associational models 
 
-In the following example and script provided, we are using a general mixed linear model (glmm) to test the association of the MRS with antidepressant exposure phenotype. Key elements of the model: 
+`MRS_assoc.R` is a general script template a generalised mixed linear model (glmm) to test the association of the MRS with antidepressant exposure phenotype. Key elements of the model: 
 
 **Phenotype** : Antidepressant exposure phenotype 
 
@@ -81,5 +81,36 @@ In the following example and script provided, we are using a general mixed linea
 **Key Covariates**: Age, Sex, Methylation levels at AHRR(cg05575921), lymphocyte cell proportions, monocyte cell proportions, Technical covariates as a random effect (in GS, we often include (1|Batch)), *If related cohort* Top 10 genetic PCs/Kinship matrix 
 
 *A note on accounting for relatedness*: Each cohort will have their own pipelines to account for relatedness within their cohorts, i.e Twin Cohorts. In this case, we welcome the use of in-house pipelines and models for testing the association of Phenotype ~ MRS, including the key covariates detailed above. If not using the example above, please do document your model and analysis. 
+
+*--cohort*: Cohort name, e.g 'GS' or 'LBC1936'
+
+*--id_column*: The column name of the identifier column (default == IID)
+
+*--mrs*: The filepath to the AD MRS file (made using MRS_calc.R, format nx(2/3), identifier column and MRS column named `AD_MRS`)
+
+Column names: 
+
+Identifier column(s)= 'IID' ('FID')
+
+MRS column = 'AD_MRS'
+
+*--pheno*: The filepath to the AD phenotype file
+
+Column names: 
+
+Identifier column = 'IID'
+Phenotype column = 'antidep', coded as **0**-**No AD exposure** and **1**- **AD exposure**
+
+*--covs*: The filepath to the covariate file (format: Identifier columns and covariates to include in the model). 
+
+Column names: 
+Age = 'age'
+Sex = 'sex_coded' (0/1)
+AHRR= 'cg05575921'
+Monocyte cell proportions = 'Mono'
+Lymphocyte cell proportions = 'lymphocytes'
+Batch = 'Batch'
+PCS = 'C1-10'
+
 
 If you have any questions, please contact me at s2112198@ed.ac.uk OR e.e.davyson@sms.ed.ac.uk

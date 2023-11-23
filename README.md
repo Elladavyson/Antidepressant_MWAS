@@ -20,7 +20,7 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 `MRS_calc.R`: Rscript to calculate antidepressant exposure MRS using GS weights.
 
-*NB*The MRS is calculated as a weighted sum of 212 CpGs (shared as data files). The CpGs were trained on the overlapping CpGs from the 450K and EPIC arrays, so therefore should be present regardless of which array was used.
+*NB* The MRS is calculated as a weighted sum of 212 CpGs (shared as data files). The CpGs were trained on the overlapping CpGs from the 450K and EPIC arrays, so therefore should be present regardless of which array was used.
 
 `MRS_assoc.R`: Rscript to run GLMM of antidepressant exposure ~ MRS + covariates (age, sex, WBC proportions, Batch, AHRR methylation and genetic PCs).
 

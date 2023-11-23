@@ -60,6 +60,8 @@ Arguments:
 
 `{cohort}_DNAm_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
 
+`{cohort}_DNAm_preproc.log`: Log file
+
 **OSCA** `process_DNAm_OSCA.sh`
 
 `{cohort}_DNAm_preproc`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS. 
@@ -91,6 +93,8 @@ Arguments:
 `{cohort}_AD_MRS_overalldist.png`: A histogram of the MRS distribution in everyone in the cohort
 
 `{cohort}_AD_MRS_phenodist.png`: A histogram of distributions for AD non-exposed and AD-exposed individuals in the cohort
+
+`{cohort}_AD_MRS.log`: Log file
 
 ### Associational models 
 
@@ -162,6 +166,8 @@ Column names:
 `{cohort}_MRS_AD_coefficients.txt`: A table of the coefficients (Betas), Standard Errors, Z scores and P values from the association model results, extracted using `summary(assoc_mod)$coefficients %>% as.data.frame()`
 
 `{cohort}_MRS_AD_logL.txt`: A table of the log likelihood of the model including a DNAm predictor (`assoc_mod`), and when not including the predictor (`null_mod`), and the McFaddans R2 `mcf_r2` calculated as `1-logLik(assoc_mod)/logLik(null_mod)`. 
+
+`{cohort}_MRS_AD_assoc.log`: Log file 
 
 ### Contact
 

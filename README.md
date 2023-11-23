@@ -21,8 +21,9 @@ The residuals from this analysis were then taken forward into the LASSO model.
 
 ### Shared files needed 
 
+`big_lasso_450K_selfrep.txt`: Text file of the CpGs and their weights 
+
 `selfrep_lasso_probe_lst.txt` : Text file of the CpG 'cg' names used in calculating the MRS. 
-`big_lasso_450K_selfrep.txt`: Text file oif the CpGs and their weights 
 
 ### DNAm preprocessing 
 

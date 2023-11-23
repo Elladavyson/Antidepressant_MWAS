@@ -21,9 +21,9 @@ The residuals from this analysis were then taken forward into the LASSO model.
 
 ### Shared files needed 
 
-`big_lasso_450K_selfrep.txt`: Text file of the CpGs and their weights 
+`GS_AD_MRS_weights.txt`: Text file of the CpGs and their weights 
 
-`selfrep_lasso_probe_lst.txt` : Text file of the CpG 'cg' names used in calculating the MRS. 
+`MRS_probes.txt` : Text file of the CpG 'cg' names used in calculating the MRS. 
 
 ### DNAm preprocessing 
 
@@ -48,7 +48,7 @@ Arguments:
 
 *--outdir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes --probes selfrep_lasso_probe_lst.txt --id_column IID --out_dir /Users/results/MRS_output/
+**Example** : Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes_unstd.rds --probes MRS_probes.txt --id_column IID --outdir /exports/eddie/scratch/s2112198/
 
 **OSCA** : `process_DNAm_OSCA.sh` is a template script to select and standardised DNAm object from BOD files (OSCA format). Change DNAm_filename and outfile_name accordingly. Assumes the DNAm object has rows as participants and columns as CpG names.
 
@@ -84,7 +84,7 @@ Arguments:
 
 *--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript MRS_calc.R --cohort GS --DNAm GS_DNAm_preproc.txt --weights big_lasso_450K_selfrep.txt --id_column IID --pheno selfrep_pheno3_methyl.csv --out_dir /Users/results/MRS_output/
+**Example** : Rscript MRS_calc.R --cohort GS --DNAm GS_DNAm_preproc.txt --weights GS_AD_MRS_weights.txt --id_column IID --pheno selfrep_pheno3_methyl_03_05.csv --outdir /exports/eddie/scratch/s2112198/
 
 #### OutPut 
 
@@ -159,7 +159,7 @@ Column names:
 
 *--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript MRS_assoc.R --cohort GS --id_column IID --mrs GS_AD_MRS.txt --pheno selfrep_pheno3_--covs GS_all_covs_pcs_tst.txt --id_column IID --pheno selfrep_pheno3_methyl.csv --outdir /Users/results/MRS_output/
+**Example** : Rscript MRS_assoc.R --cohort GS --id_column IID --mrs GS_AD_MRS.txt --pheno selfrep_pheno3_methyl_03_05.csv --covs GS_test_covs_pcs.txt --id_column IID --outdir /exports/eddie/scratch/s2112198/
 
 #### Output 
 

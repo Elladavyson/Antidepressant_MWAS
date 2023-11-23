@@ -12,4 +12,6 @@ The residuals from this analysis were then taken forward into the LASSO model.
 
 ## Running the LASSO model 
 
-`Lasso_regression_DNAm`: The LASSO model `antidep_resid ~ DNAm + covars` was run using the R package `biglasso`. All non-zero features were then extracted with their corresponding weights. These are then saved as the weights file to be used in the calculation of MRS in external cohorts. 
+`Lasso_regression_DNAm.R`: The LASSO model `antidep_resid ~ DNAm` was run using the R package `biglasso`. 
+
+ All non-zero features were then extracted with their corresponding weights. These are then saved as the weights file to be used in the calculation of MRS in external cohorts. 

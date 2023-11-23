@@ -3,7 +3,7 @@
 # Set up libraries and options/files
 
 ###############################################################################
-.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
+
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -20,7 +20,7 @@ option_list <- list(
   make_option('--DNAm', type='character', help="The filepath for DNAm file", action='store'),
   make_option('--probes', type = 'character', help= "The filepath for the list of probes for the MRS", action = 'store'),
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column", action = 'store'),
-  make_option('--out_dir', type = 'character', help = 'The filepath for output directory', action = 'store')
+  make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )
 
 args = commandArgs(trailingOnly=TRUE)
@@ -32,7 +32,7 @@ cohort <- opt$cohort
 DNAm_filepath=opt$DNAm # DNAm file
 probes_filepath=opt$probes # Probe list 
 id_col <- opt$id_column # Vector of identifier columns 
-out_dir <- opt$out_dir
+out_dir <- opt$outdir
 
 sink(paste0(out_dir, cohort, "_DNAm_preproc.log"))
 print(paste0('DNAm file from : ', DNAm_filepath))

@@ -26,6 +26,8 @@ Repository for antidepressant MRS calculation in external cohorts.
 
 *NB* The `MRS_assoc.R` script is a template for modelling the association between the phenotype and MRS, however we anticipate the use of other models to account for population and family structure of individual cohorts. In this case, please follow usual pipelines and return the coefficients and statistics of the model, McFadden's pseudo-R2 (more detail in the README.md in this folder), and documentation of the model used.
 
+`cohort_demographics.R`: Rscript to generate a table of demographics for the cohort sample, including age, sex, bmi, smoking behaviours (ever smoked Q and pack years) and lifetime MDD status (if appliable). 
+
 ### Contact
 
 If you have any questions, please contact me at s2112198@ed.ac.uk OR e.e.davyson@sms.ed.ac.uk

@@ -54,9 +54,14 @@ print(paste0('The weights file has weights for ', nrow(weights), ' CpGs'))
 if(DNAm %>% select(starts_with("cg")) %>% ncol() != nrow(weights)){
   print(paste0('Number of probes read in for DNAm file (', DNAm %>% select(starts_with("cg")) %>% ncol(),
   ') does not match the number of weights provided (', nrow(weights), ')'))
+  # If not all weights included, save the probes included in the MRS for the cohort 
+  readr::write_lines(DNAm %>% select(starts_with("cg")) %>% colnames(), paste0(outdir,cohort, '_probesinMRS.txt'))
+  print(paste0('Probes used in the MRS are saved in: ', outdir, cohort, '_probesinMRS.txt'))
 } else {
   print(paste0('Number of probes read in for DNAm matches the number of weights provided: n = ', nrow(weights)))
 }
+
+
 ###############################################################################
 
 # Calculate the MRS 

@@ -102,7 +102,6 @@ print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ' aft
              nrow(MRS_covs_pheno%>% 
                     filter(antidep==0))))
 
-
 ###############################################################################
   
   # Generalised linear mixed model (GLMM)

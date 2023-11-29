@@ -156,26 +156,37 @@ Column names:
 This R script will generate a table of demographic information for your sample (useful for the manuscript and interpretating our results). Currently it formats information on age, sex, bmi, smoking, pack years, AD MRS (generated from `MRS_calc.R` and mdd status (if applicable). 
 
 *--cohort*: Cohort name, e.g 'GS' or 'LBC1936'
+
 *--id_column*: The column name of the identifier column (default == IID)
+
 *--mrs*: The filepath to the AD MRS file (made using MRS_calc.R,`{cohort}_AD_MRS.txt`, MRS column named `AD_MRS`)
+
 *--pheno*: The filepath to the AD phenotype file
 
 Column names: 
 
 **Identifier column(s)** = 'IID' ('FID')
+
 **Phenotype column** = 'antidep', coded as **0**-**No AD exposure** and **1**- **AD exposure**
 
 *--demo*: Filepath to the file containing demographic information
 
 Column names:
+
 **Age**: 'age', numeric()
+
 **Sex**: 'sex_coded', numeric(), coded as 0 (Female) and 1 (Male)
+
 **BMI**: 'bmi', numeric()
+
 **Smoking status ('Have you ever smoked tobacco?')**: 'ever_smoke', numeric(), coded as 1 ('Current smoker'), 2 ('Former- < 12 months), 3('Former, > 12 months), 4 (Never smoked), 5 (NA) 
+
 **Pack years**: 'pack_years', numeric()
+
 **Lifetime MDD status**: 'mdd', numeric(), coded as 0 (Controls) and 1 (Cases)
 
 ### Output 
 
 `{cohort}_demo_summary.txt`: A summary table of the demographics for those exposed to ADs and those not exposed
+
 `{cohort}_MRS_demographics.txt`: A log file for the Rscript. 

@@ -123,9 +123,8 @@ assoc_mod <- glmer(as.factor(antidep)~ scale(AD_MRS) + scale(age) + scale(Mono) 
                      scale(C7) + scale(C8) + scale(C9) + scale(C10) +
                      (1|Batch), data = MRS_covs_pheno, family = 'binomial')
 
-
 # Extract the fixed effect estimates, standard errors and p-value 
-
+warnings()
 print(assoc_mod)
 print(summary(assoc_mod)$coefficients %>% as.data.frame())
 
@@ -160,6 +159,7 @@ null_mod <- glmer(as.factor(antidep)~ scale(age) + scale(Mono) + scale(lymphocyt
                     scale(C7) + scale(C8) + scale(C9) + scale(C10) +
                     (1|Batch), data = MRS_covs_pheno, family = 'binomial')
 
+warnings()
 
 print('Null model summary')
 print(null_mod)

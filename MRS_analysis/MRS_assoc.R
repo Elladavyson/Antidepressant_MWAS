@@ -12,6 +12,7 @@ library(tidyr)
 library(ggplot2)
 library(tools)
 library(lme4)
+library(tibble)
 
 parse <- OptionParser()
 
@@ -129,7 +130,8 @@ print(assoc_mod)
 print(summary(assoc_mod)$coefficients %>% as.data.frame())
 
 assoc_coefs <- summary(assoc_mod)$coefficients %>% as.data.frame()
-  
+assoc_coefs <- rownames_to_column(assoc_coefs, var = "Coefficient")
+
 # save the coefficients 
 print(paste0('Saving the full model coefficients to ', outdir, cohort, "_MRS_AD_coefficients.txt"))
 

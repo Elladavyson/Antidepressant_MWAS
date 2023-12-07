@@ -41,8 +41,7 @@ sink(paste0(outdir, cohort, '_signif_cpg_lookup.log'))
 # standardised methylation levels (columns = ID, cgX, cgY, cgZ ....)
 
 probes <- read.table(probes_fp, header = T)
-
-# check the format (?)
+print(paste0('Reading in data for ', probes %>% select(starts_with("cg")) %>% ncol() %>% as.numeric(), ' cpgs'))
 
 ## AD phenotype 
 # support phenotype .csv files or .txt files 
@@ -65,7 +64,8 @@ if('antidep' %in% colnames(ad_pheno) == FALSE){
 
 # remove missing values (if any?)
 ad_pheno <- ad_pheno %>% filter(!is.na(antidep)) 
-print(head(ad_pheno))
+
+
 # logging phenotype characteristics 
 print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ' : Number of cases: ',
              nrow(ad_pheno %>% 
@@ -157,7 +157,7 @@ probe_violins <- function(data, cpg) {
 violins <- list()
 ttest_res <- data.frame()
 
-for (i in 1:7) {
+for (i in 1:(ad_pheno_meth %>% select(starts_with('cg')) %>% ncol() %>% as.numeric())) {
   cpg <- (ad_pheno_meth %>% select(starts_with("cg"))%>% colnames())[i]
   print(i)
   violin_func<- probe_violins(ad_pheno_meth, cpg)

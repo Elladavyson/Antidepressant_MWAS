@@ -18,7 +18,7 @@ parse <- OptionParser()
 option_list <- list(
   make_option('--cohort', type='character', help="Cohort, ideally no spaces (for graphs and documentation)", action='store'),
   make_option('--DNAm', type='character', help="The filepath for DNAm file", action='store'),
-  make_option('--probes', type = 'character', help= "The filepath for the list of probes for the MRS", action = 'store'),
+  make_option('--probes', type = 'character', help= "The filepath for the list of probes to be extracted (for MRS or CpG look-up)", action = 'store'),
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column", action = 'store'),
   make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )

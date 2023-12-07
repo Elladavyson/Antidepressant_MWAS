@@ -20,6 +20,7 @@ option_list <- list(
   make_option('--DNAm', type='character', help="The filepath for DNAm file", action='store'),
   make_option('--probes', type = 'character', help= "The filepath for the list of probes to be extracted (for MRS or CpG look-up)", action = 'store'),
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column", action = 'store'),
+  make_option('--analysis', type = 'character', help = 'Name of analysis preprocessing is being performed for', action = 'store', choices = c('sig', 'mrs')),
   make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )
 
@@ -32,9 +33,10 @@ cohort <- opt$cohort
 DNAm_filepath=opt$DNAm # DNAm file
 probes_filepath=opt$probes # Probe list 
 id_col <- opt$id_column # Vector of identifier columns 
+analysis <- opt$analysis
 out_dir <- opt$outdir
 
-sink(paste0(out_dir, cohort, "_DNAm_preproc.log"))
+sink(paste0(out_dir, cohort, "_", analysis, "_DNAm_preproc.log"))
 print(paste0('DNAm file from : ', DNAm_filepath))
 print(paste0('List of probes from : ', probes_filepath))
 print(paste0('ID column : ', id_col))
@@ -103,7 +105,7 @@ DNAm_dists <- ggplot(DNAm_both, aes(x = Mval, fill = CpG)) +
   facet_grid(Values~CpG) +
   ggtitle(paste0(cohort, ': Random sample of probes - standardisation'))
 
-ggsave(filename=paste0(out_dir, cohort, "_DNAm_preproc_std.png"),DNAm_dists, 
+ggsave(filename=paste0(out_dir, cohort, "_", analysis, "_DNAm_preproc_std.png"),DNAm_dists, 
        width = 8, height = 6, device='png', dpi=300)
 
 
@@ -113,6 +115,6 @@ ggsave(filename=paste0(out_dir, cohort, "_DNAm_preproc_std.png"),DNAm_dists,
 
 ###############################################################################
 
-outfile <- paste0(out_dir, cohort, "_DNAm_preproc.txt")
+outfile <- paste0(out_dir, cohort, "_", analysis, "_DNAm_preproc.txt")
 write.table(DNAm_MRS_std, outfile, row.names = F, quote = F)
 sink()

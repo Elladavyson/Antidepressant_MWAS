@@ -24,7 +24,7 @@ Arguments:
 
 *--DNAm* : DNAm file path e.g '/Users/data/DNAm/DNAm.rds'
 
-*--probes* : The file path for the list of probes used in the MRS e.g '/Users/data/DNAm/selfrep_lasso_probe_lst.txt'
+*--probes* : The file path for the list of probes used in the MRS e.g '/Users/data/DNAm/MRS_probes.txt'
 
 *--id_column* : The name of the identifier column in the data e.g 'IID'
 
@@ -60,7 +60,7 @@ Arguments:
 
 *--id_column* : The column name of the identifier column (default == IID)
 
-*--weights* : The file path for the MRS weights files provided by GS e.g /Users/data/DNAm/big_lasso_450K_selfrep.txt
+*--weights* : The file path for the MRS weights files provided by GS e.g /Users/data/DNAm/GS_AD_MRS_weights.txt
 
 *--pheno* : The file path to the antidepressant exposure phenotype file for your cohort. Script can read in either a .csv, or .txt file and should follow a format of `FID`(Optional), `IID` (Required), and `antidep`, with `antidep` being coded as 0 (no exposure) and 1 (exposure).  e.g /Users/data/phenos/AD_pheno.csv
 
@@ -141,7 +141,7 @@ Column names:
 
 *--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript MRS_assoc.R --cohort GS --id_column IID --mrs GS_AD_MRS.txt --pheno selfrep_pheno3_methyl_03_05.csv --covs GS_test_covs_pcs.txt --id_column IID --outdir /exports/eddie/scratch/s2112198/
+**Example** : Rscript MRS_assoc.R --cohort GS --id_column IID --mrs GS_AD_MRS.txt --pheno selfrep_pheno3_methyl_03_05.csv --covs GS_test_covs_pcs.txt --outdir /exports/eddie/scratch/s2112198/
 
 ### Output 
 
@@ -153,7 +153,7 @@ Column names:
 
 ## Demographic information 
 
-This R script will generate a table of demographic information for your sample (useful for the manuscript and interpretating our results). Currently it formats information on age, sex, bmi, smoking, pack years, AD MRS (generated from `MRS_calc.R` and mdd status (if applicable). 
+`cohort_demographics.R` will generate a table of demographic information for your sample (useful for the manuscript and interpretating our results). Currently it formats information on age, sex, bmi, smoking, pack years, AD MRS (generated from `MRS_calc.R` and mdd status (if applicable). 
 
 *--cohort*: Cohort name, e.g 'GS' or 'LBC1936'
 
@@ -184,6 +184,8 @@ Column names:
 **Pack years**: 'pack_years', numeric()
 
 **Lifetime MDD status**: 'mdd', numeric(), coded as 0 (Controls) and 1 (Cases)
+
+**Example** : Rscript cohort_demographics.R --cohort GS --id_column IID --mrs GS_AD_MRS.txt --pheno selfrep_pheno3_methyl_03_05.csv --demo GS_demograph.txt --outdir /exports/eddie/scratch/s2112198/
 
 ### Output 
 

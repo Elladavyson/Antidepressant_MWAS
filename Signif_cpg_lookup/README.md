@@ -2,7 +2,7 @@
 
 ## Files required 
 
-List of probes significant in the GS MWAS: 
+List of probes significant in the GS MWAS: MWAS_signif_probes.txt
  
 ## Processing the DNAm 
 
@@ -18,21 +18,20 @@ Arguments:
 
 *--id_column* : The name of the identifier column in the data e.g 'IID'
 
-*--analysis*: Either 'sig' or 'MRS', to denote which analysis the file is being formatted for (prevent overwriting).
+*--analysis*: Either 'sig' or 'mrs', to denote which analysis the file is being formatted for (prevent overwriting).
 
 *--outdir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes_unstd.rds --probes MRS_probes.txt --id_column IID --outdir /exports/eddie/scratch/s2112198/
+**Example** Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes_unstd.rds --probes MWAS_signif_probes.txt --id_column IID --analysis sig --outdir /exports/eddie/scratch/s2112198/
 
 ### Output 
 
-`{cohort}_DNAm_sig_preproc.txt`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS
+`{cohort}_sig_DNAm_preproc.txt`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS
 
-`{cohort}_DNAm_sig_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
+`{cohort}_sig_DNAm_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
 
-`{cohort}_DNAm_sig_preproc.log`: Log file
+`{cohort}_sig_DNAm_preproc.log`: Log file
 
-**Example** Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes_unstd.rds --probes MWAS_signif_probes.txt --id_column IID --analysis sig --outdir /exports/eddie/scratch/s2112198/
 
 
 ## Plotting the distributions 
@@ -52,9 +51,18 @@ Arguments:
 *--outdir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
 
 ### Output 
+
+**Graphs**
+
 `{cohort}_all_dists.png`: Plots of the distributions of the probes in AD cases and controls
+
 `{cohort}_violin_{cpg}.png`: Violin plots of a distribution, annotated with t-test results (one plot produced for each CpG)
+
 `{cohort}_all_violins.png`: All Violin plots plotted together
+
+**Tables**
+
 `{cohort}_probe_ttest.tsv`: Results from the t-test in tabular format 
+
 `{cohort}_signif_cpg_lookup.log`: Log file for script 
 

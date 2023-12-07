@@ -31,6 +31,7 @@ probes_fp=opt$probes_dat # File path of methylation data file
 pheno_fp=opt$pheno # AD exposure (phenotype of cohort)
 outdir <- opt$outdir # File path of output directory
 
+sink(paste0(outdir, cohort, '_signif_cpg_lookup.log'))
 ################################################################################
 
 # Read in data 
@@ -180,3 +181,4 @@ ggsave(filename = paste0(outdir, cohort, '_all_violins.png'), plot = all_violins
 
 write.table(ttest_res, paste0(outdir, cohort, '_probe_ttest.tsv'), sep = '\t', row.names = F, quote = F)
 
+sink()

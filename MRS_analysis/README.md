@@ -28,9 +28,11 @@ Arguments:
 
 *--id_column* : The name of the identifier column in the data e.g 'IID'
 
+*--analysis*: Either 'sig' or 'mrs', to denote which analysis the file is being formatted for (prevent overwriting).
+
 *--outdir* : The directory where the results and graphs will be saved e.g /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes_unstd.rds --probes MRS_probes.txt --id_column IID --outdir /exports/eddie/scratch/s2112198/
+**Example** : Rscript process_DNAm_MRS.R --cohort GS --DNAm test_212_probes_unstd.rds --probes MRS_probes.txt --id_column IID --analysis mrs --outdir /exports/eddie/scratch/s2112198/
 
 **OSCA** : `process_DNAm_OSCA.sh` is a template script to select and standardised DNAm object from BOD files (OSCA format). Change DNAm_filename and outfile_name accordingly. Assumes the DNAm object has rows as participants and columns as CpG names.
 
@@ -38,11 +40,11 @@ Arguments:
 
 **R script** `process_DNAm_MRS.R`:
 
-`{cohort}_DNAm_preproc.txt`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS
+`{cohort}_mrs_DNAm_preproc.txt`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS
 
-`{cohort}_DNAm_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
+`{cohort}_mrs_DNAm_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
 
-`{cohort}_DNAm_preproc.log`: Log file
+`{cohort}_mrs_DNAm_preproc.log`: Log file
 
 **OSCA** `process_DNAm_OSCA.sh`
 
@@ -56,7 +58,7 @@ Arguments:
 
 *--cohort* : Cohort name, e.g 'GS' or 'LBC1936'
 
-*--DNAm* : The file path for the preprocessed DNAm file from `process_DNAm_MRS.R`, e.g /Users/data/DNAm/AD_MRS/GS_DNAm_preproc.txt
+*--DNAm* : The file path for the preprocessed DNAm file from `process_DNAm_MRS.R`, e.g /Users/data/DNAm/AD_MRS/GS_mrs_DNAm_preproc.txt
 
 *--id_column* : The column name of the identifier column (default == IID)
 
@@ -66,7 +68,7 @@ Arguments:
 
 *--outdir* : The directory where the results and graphs will be saved e.g  /Users/data/DNAm/AD_MRS/
 
-**Example** : Rscript MRS_calc.R --cohort GS --DNAm GS_DNAm_preproc.txt --weights GS_AD_MRS_weights.txt --id_column IID --pheno selfrep_pheno3_methyl_03_05.csv --outdir /exports/eddie/scratch/s2112198/
+**Example** : Rscript MRS_calc.R --cohort GS --DNAm GS_mrs_DNAm_preproc.txt --weights GS_AD_MRS_weights.txt --id_column IID --pheno selfrep_pheno3_methyl_03_05.csv --outdir /exports/eddie/scratch/s2112198/
 
 ### OutPut 
 

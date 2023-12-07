@@ -4,6 +4,7 @@
 
 ###############################################################################
 
+.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -20,7 +21,7 @@ option_list <- list(
   make_option('--DNAm', type='character', help="The filepath for DNAm file", action='store'),
   make_option('--probes', type = 'character', help= "The filepath for the list of probes to be extracted (for MRS or CpG look-up)", action = 'store'),
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column", action = 'store'),
-  make_option('--analysis', type = 'character', help = 'Name of analysis preprocessing is being performed for', action = 'store', choices = c('sig', 'mrs')),
+  make_option('--analysis', type = 'character', help = 'Name of analysis preprocessing is being performed for', action = 'store'),
   make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )
 
@@ -37,10 +38,19 @@ analysis <- opt$analysis
 out_dir <- opt$outdir
 
 sink(paste0(out_dir, cohort, "_", analysis, "_DNAm_preproc.log"))
+
+if (analysis == 'sig'){
+  print('Preprocessing DNAm for the plotting the distributions of significant CpGs from the GS MWAS in an external cohort')
+} else if (analysis == 'mrs') {
+  print('Preprocessing DNAm for the calculation of a methylation risk score with weights from BIGLASSO in GS')
+} else {
+  stop('Please provide either sig or mrs to the analysis argument')
+}
 print(paste0('DNAm file from : ', DNAm_filepath))
 print(paste0('List of probes from : ', probes_filepath))
 print(paste0('ID column : ', id_col))
 print(paste0('Output to be saved in : ', out_dir))
+
 
 ###############################################################################
 
@@ -68,7 +78,7 @@ print(paste0('Number of probes in DNAm file: ',DNAm %>% select(starts_with("cg")
 print('Filter to just the MRS CpGs')
 DNAm_MRS <- DNAm %>% select(c(all_of(id_col), intersect(names(DNAm), probes)))
 
-print(paste0('Filtered to ', DNAm %>% select(starts_with("cg")) %>% ncol(), ' CpGs')) 
+print(paste0('Filtered to ', DNAm_MRS %>% select(starts_with("cg")) %>% ncol(), ' CpGs')) 
 rm(DNAm) # remove large methylation object 
 
 ###############################################################################

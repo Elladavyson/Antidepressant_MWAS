@@ -72,11 +72,29 @@ Arguments:
 
 ### OutPut 
 
-`{cohort}_AD_MRS.txt`: a txt file of participants identifiers and their MRS ('AD_MRS')
+#### Data 
+
+`{cohort}_AD_MRS.txt`: a txt file of participants identifiers and their MRS ('AD_MRS'), needed for the associational model (`MRS_assoc.R`). 
+
+`{cohort}_cpg_missingness.txt`: A txt file of CpGs and the % of missingness within the sample 
+
+#### Plots 
 
 `{cohort}_AD_MRS_overalldist.png`: A histogram of the MRS distribution in everyone in the cohort
 
 `{cohort}_AD_MRS_phenodist.png`: A histogram of distributions for AD non-exposed and AD-exposed individuals in the cohort
+
+`{cohort}_MRS_cpg_missingness.png`: A bar plot of all the CpGs missing in more than 50% of individuals and the % of missingness.
+
+`{cohort}_MRS_cpg_missingness_weights.png`: A scatter plot of the % of missingness and the weight of the CpGs in the MRS.
+
+`{cohort}_MRS_cpg_missingness_hist.png`: A histogram of the % of missingness in the CpGs included in the MRS.
+
+`{cohort}_MRS_cpg_missingness_all_plots.png`: All the missingness plots, `{cohort}_MRS_cpg_missingness.png`, `{cohort}_MRS_cpg_missingness_weights.png` and `{cohort}_MRS_cpg_missingness_hist.png` plotted together using `ggarrange()` from `ggpubr`. 
+
+`{cohort}_indiv_numcpgs_MRS.png`: A histogram of the number of CpGs included within the MRS for individuals (another metric of missingness). 
+
+#### Log file 
 
 `{cohort}_AD_MRS.log`: Log file
 
@@ -94,11 +112,17 @@ Key elements of the model:
 
 ### General Output 
 
-We would like the coefficients of the model, alongside the standard errors, Z scores, P values and the McFaddens pseudo-R2 to assess the wellness of fit. To calculate McFaddens pseudo-R2, we need to model a *null* model, which is, the same model parameters as before but without the predictor of interest (**without the AD MRS**).
+We would like the coefficients of the model, alongside the standard errors, Z scores, P values. 
+We will assess fit using the AUC, ROC curves and a few pseudo-R2 measures (McFaddens pseudo-R2 and Nagelkerke's R2).
+To calculate McFaddens and Nagelkerke's pseudo-R2, we need to model a *null* model, which is, the same model parameters as before but without the predictor of interest (**without the AD MRS**).
 
 The McFaddens pseudo R2 is then calculated as a ratio of the loglikelihood of the full (including MRS) and null (excluding MRS) model: 
 
-$$pseudo R^{2}=1-({LogLik(full model)\over LogLik(nullmodel)})$$
+$$ McFaddens pseudo R^{2}=1-({LogLik(full model) \over LogLik(null model)})$$
+
+Nagelkerkes pseudo R2 is calculated as 
+
+$$ Nagelkerkes pseudo R^{2} = ({1-({Likelihood(full model)\over Likelihood(null model)}^({2\over N})) \over (1- Likelihood(null model)^({2 \over N}))}) $$
 
 ### Example Script 
 
@@ -147,9 +171,19 @@ Column names:
 
 ### Output 
 
+#### Data
+
 `{cohort}_MRS_AD_coefficients.txt`: A table of the coefficients (Betas), Standard Errors, Z scores and P values from the association model results, extracted using `summary(assoc_mod)$coefficients %>% as.data.frame()`
 
-`{cohort}_MRS_AD_logL.txt`: A table of the log likelihood of the model including a DNAm predictor (`assoc_mod`), and when not including the predictor (`null_mod`), and the McFaddans R2 `mcf_r2` calculated as `1-logLik(assoc_mod)/logLik(null_mod)`. 
+`{cohort}_MRS_AD_modemetrics.txt`: A table of the log likelihood of the model including a DNAm predictor (`assoc_mod`), and when not including the predictor (`null_mod`), McFaddans R2 `mcf_r2`, Cox and Snells R2 (the Numerator of Nagelkerke's R2), Nagelkerkes R2, and the AUC of the model.
+
+`{cohort}_roc_curve.rds`: A roc_curve object from the `pROC` package for plotting all cohorts together.
+
+#### Plots
+
+`{cohort}_assoc_ROC_curve.pdf`: A ROC curve for the cohort. 
+
+#### Logs 
 
 `{cohort}_MRS_AD_assoc.log`: Log file 
 

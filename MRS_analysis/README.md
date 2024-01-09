@@ -120,9 +120,12 @@ The McFaddens pseudo R2 is then calculated as a ratio of the loglikelihood of th
 
 $$ McFaddens pseudo R^{2}=1-({LogLik(full model) \over LogLik(null model)})$$
 
-Nagelkerkes pseudo R2 is calculated as 
+Nagelkerkes pseudo R2 is calculated as a scaled version of Cox & Snell R2 (The numerator in the below equation). 
 
 $$ Nagelkerkes pseudo R^{2} = ({1-({Likelihood(full model)\over Likelihood(null model)})^{2/N} \over 1- Likelihood(null model)^{2/N}}) $$
+
+However for comparison to other cohorts, the AUC is best placed, as this does not depend on the case/control proportions. 
+See: https://genomebiology.biomedcentral.com/articles/10.1186/s13059-023-02855-7#Sec9
 
 ### Example Script 
 

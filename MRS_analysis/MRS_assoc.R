@@ -3,7 +3,7 @@
 # Set up libraries and options/files
 
 ###############################################################################
-
+.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -13,6 +13,7 @@ library(ggplot2)
 library(tools)
 library(lme4)
 library(tibble)
+library(pROC)
 
 parse <- OptionParser()
 
@@ -76,7 +77,7 @@ if('antidep' %in% colnames(ad_pheno) == FALSE){
 
 # remove missing values (if any?)
 ad_pheno <- ad_pheno %>% filter(!is.na(antidep)) 
-print(head(ad_pheno))
+
 # logging phenotype characteristics 
 print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ' : Number of cases: ',
              nrow(ad_pheno %>% 
@@ -87,7 +88,7 @@ print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ' : N
 
 all_covs <- read.table(covs_fp, header = T) # 'GS_test_covs.txt', covariate file which has PCs in it
 
-print(paste0("Covariates read in ", paste(colnames(all_covs %>% select(-all_of(id_col))), collapse = ", ")))
+print(paste0("Covariates read in ", paste(colnames(all_covs %>% dplyr::select(-all_of(id_col))), collapse = ", ")))
 
 #merge the phenotype, MRS and the covariate file together 
 
@@ -99,7 +100,7 @@ MRS_covs_pheno <- merge(MRS_covs, ad_pheno, by = id_col)
 print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ' after merging with MRS and covariates: Number of cases: ',
              nrow(MRS_covs_pheno %>% 
                     filter(antidep==1)), 
-             'Number of controls: ',
+             ' \n Number of controls: ',
              nrow(MRS_covs_pheno%>% 
                     filter(antidep==0))))
 
@@ -123,6 +124,7 @@ assoc_mod <- glmer(as.factor(antidep)~ scale(AD_MRS) + scale(age) + scale(Mono) 
                      scale(C7) + scale(C8) + scale(C9) + scale(C10) +
                      (1|Batch), data = MRS_covs_pheno, family = 'binomial')
 
+
 # Extract the fixed effect estimates, standard errors and p-value 
 warnings()
 print(assoc_mod)
@@ -136,6 +138,30 @@ print(paste0('Saving the full model coefficients to ', outdir, cohort, "_MRS_AD_
 
 write.table(assoc_coefs, paste0(outdir, cohort, "_MRS_AD_coefficients.txt"), row.names = F, quote = F)
 
+###############################################################################
+
+# Calculating the AUC and ROC graph
+
+###############################################################################
+
+predicted_probs <- predict(assoc_mod, type = 'response')
+
+# takes the true outcomes (MRS_covs_pheno$antidep)
+# and the predicted probabilities for the 1 ('case') class
+# returns false positive and true positive rates for different classification thresholds
+
+roc_curve <- roc(MRS_covs_pheno$antidep, predicted_probs)
+auc_value <- auc(roc_curve)
+
+# save ROC curve object for plotting all cohorts together
+print(paste0('Saving the ROC curve object for plotting all cohorts together to rds object: ', outdir, cohort, '_roc_curve.rds'))
+saveRDS(roc_curve, paste0(outdir, cohort, '_roc_curve.rds'))
+
+# ROC Graph 
+print(paste0('Saving the ROC curve for the cohort alone to ', outdir, cohort, '_assoc_ROC_curve.pdf'))
+cairo_pdf(file = paste0(outdir, cohort, '_assoc_ROC_curve.pdf'), width = 8, height = 6)
+plot.roc(roc_curve, col = "blue", lwd =2, main = paste0('ROC Curve: ', cohort))
+dev.off()
 
 ###############################################################################
 
@@ -163,26 +189,51 @@ warnings()
 
 print('Null model summary')
 print(null_mod)
+
 print('Null model coefficients')
 print(summary(null_mod)$coefficients %>% as.data.frame())
+
 # calculate McFaddens R square 
 
 mcf_r2 <- 1-logLik(assoc_mod)/logLik(null_mod)
 print(paste0('McFaddens R2:', mcf_r2))
 
+# calculate Nagelkerke's R square 
+# Nagelkerke's R square 
+# calculate the likelihoods of the full and null models
+
+lik_assoc_mod <- exp(as.numeric(logLik(assoc_mod)))
+lik_null_mod <- exp(as.numeric(logLik(null_mod)))
+
+# calculate cox and snell R2 (the numerator in the Nagelkerkes R2)
+
+cox_snell_r2 <- 1-(lik_null_mod/lik_assoc_mod)^(2/nobs(assoc_mod))
+
+# calculate nagelkerkes r2
+nagel_denominator <- 1-(lik_null_mod)^(2/nobs(assoc_mod))
+nagel_r2 <- cox_snell_r2/nagel_denominator
+
 # create a table for results 
   
-loglikelihoods <- data.frame(Cohort=cohort, 
+modelmetrics <- data.frame(Cohort=cohort, 
                                loglik_MRS = logLik(assoc_mod), 
                                loglik_null = logLik(null_mod),
-                               mcfad_R2 = mcf_r2)
+                               lik_MRS = exp(logLik(assoc_mod)),
+                               lik_null = exp(logLik(null_mod)),
+                               mcfad_R2 = mcf_r2, 
+                               cox_snell_r2 = cox_snell_r2,
+                               nagelkerke_r2 = nagel_r2,
+                               AUC = auc_value)
 
-print('Log likelihood table of the full and null model')
-print(loglikelihoods)
-# save R2 and log likelihood values 
+
+
+print('Model metric table')
+print(modelmetrics)
+
+# save R2 and model metric table 
   
-print(paste0('Saving the log likelihood table to ',outdir, cohort, "_MRS_AD_logL.txt"))
-write.table(loglikelihoods, paste0(outdir, cohort, "_MRS_AD_logL.txt"), row.names = F, quote = F)
+print(paste0('Saving the model metric table to ',outdir, cohort, "_MRS_AD_logL.txt"))
+write.table(modelmetrics, paste0(outdir, cohort, "_MRS_AD_modmetrics.txt"), row.names = F, quote = F)
   
 
 

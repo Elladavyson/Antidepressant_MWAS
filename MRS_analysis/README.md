@@ -40,14 +40,18 @@ Arguments:
 
 **R script** `process_DNAm_MRS.R`:
 
+#### Data
 `{cohort}_mrs_DNAm_preproc.txt`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS
 
+#### Plots 
 `{cohort}_mrs_DNAm_preproc_std.png`: Distributions from three randomly selected CpGs to overview their distributions pre and post scaling (sanity check). 
 
+#### Logs
 `{cohort}_mrs_DNAm_preproc.log`: Log file
 
 **OSCA** `process_DNAm_OSCA.sh`
 
+#### Data
 `{cohort}_DNAm_preproc`: A text file of the standardised DNAm levels for the 212 CpGs required for making the MRS. 
 
 ## Calculating MRS 
@@ -228,6 +232,8 @@ Column names:
 
 ### Output 
 
+#### Data
 `{cohort}_demo_summary.txt`: A summary table of the demographics for those exposed to ADs and those not exposed
 
+#### Logs
 `{cohort}_MRS_demographics.txt`: A log file for the Rscript. 

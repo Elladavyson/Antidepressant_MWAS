@@ -11,6 +11,7 @@ library(readr)
 library(tidyr)
 library(ggplot2)
 library(tools)
+library(ggpubr)
 
 parse <- OptionParser()
 
@@ -51,9 +52,16 @@ print(paste0('The DNAm file has data for ', nrow(DNAm), ' participants and ', DN
 weights <- read.table(weights_fp, header = T) 
 print(paste0('The weights file has weights for ', nrow(weights), ' CpGs'))
 
+
+###############################################################################
+
+# Assess missingness of CpGs
+
+###############################################################################
+
 if(DNAm %>% select(starts_with("cg")) %>% ncol() != nrow(weights)){
   print(paste0('Number of probes read in for DNAm file (', DNAm %>% select(starts_with("cg")) %>% ncol(),
-  ') does not match the number of weights provided (', nrow(weights), ')'))
+               ') does not match the number of weights provided (', nrow(weights), ')'))
   # If not all weights included, save the probes included in the MRS for the cohort 
   readr::write_lines(DNAm %>% select(starts_with("cg")) %>% colnames(), paste0(outdir,cohort, '_probesinMRS.txt'))
   print(paste0('Probes used in the MRS are saved in: ', outdir, cohort, '_probesinMRS.txt'))
@@ -61,6 +69,48 @@ if(DNAm %>% select(starts_with("cg")) %>% ncol() != nrow(weights)){
   print(paste0('Number of probes read in for DNAm matches the number of weights provided: n = ', nrow(weights)))
 }
 
+missing_percentage <- DNAm %>% select(-IID) %>%
+  summarise_all(~ mean(is.na(.)) * 100) %>%
+  gather(CpG, MissingPercentage) %>% arrange(desc(MissingPercentage))
+
+print(paste0('The CpG with the highest level of missingness is: ', missing_percentage$CpG[1]))
+print(paste0('There are ', nrow(missing_percentage %>% filter(MissingPercentage > 5)), ' CpGs with more than 5% missingness and ',
+             nrow(missing_percentage %>% filter(MissingPercentage > 50)), ' with more than 50% missingness'))
+
+print(missing_percentage)
+
+missing_hist <- ggplot(missing_percentage, aes(x = MissingPercentage, fill = MissingPercentage < 50)) + 
+  geom_histogram() + 
+  theme_minimal() + 
+  labs(x = '% of Missingness', y = 'Number of CpGs')+
+  geom_vline(xintercept = 50, color = "red", linetype = 'dashed')+
+  ggtitle(cohort)
+
+missing_plot <- ggplot(missing_percentage %>% filter(MissingPercentage > 50),
+                           aes(x = reorder(CpG, -MissingPercentage), y = MissingPercentage)) +
+    geom_bar(stat='identity', fill = 'skyblue', color = 'black') + 
+    labs(title = paste0(cohort, ': CpG missingness in MS'), x = "CpG", y = "% Missing") +
+    theme_minimal()+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+# Plot the % of missingness against the absolute value of the MRS coefficient 
+
+missingness_weights <- merge(missing_percentage, weights, by = 'CpG')
+
+missing_weights_plt <- ggplot(missingness_weights, aes(x = MissingPercentage, y = abs(Weight))) + 
+  geom_point() + 
+  theme_minimal() + 
+  labs(x = '% of Missingness', y ='MS weight', 
+       title = paste0(cohort, ': % missing vs MS weights for CpGs > 50% missingness'))
+
+all_missing_plots <- ggarrange(missing_hist, missing_weights_plt, missing_plot, nrow = 3, ncol = 1)
+
+ggsave(paste0(outdir, cohort, "_MRS_cpg_missingness.png"), missing_plot, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(outdir, cohort, "_MRS_cpg_missingness_hist.png"), missing_hist, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(outdir, cohort, "_MRS_cpg_missingness_weights.png"), missing_weights_plt, width = 8, height = 6, device='png', dpi=300)
+ggsave(paste0(outdir, cohort, "_MRS_cpg_missingness_allplots.png"), all_missing_plots, width = 8, height = 6, device='png', dpi=300)
+
+write.table(missing_percentage, paste0(outdir, cohort, '_cpg_missingness.txt'), row.names = F, quote = F)
 
 ###############################################################################
 
@@ -74,6 +124,8 @@ DNAm_long <- DNAm %>%
                values_to= "Mval")
 print('Merging with the weights')
 DNAm_long <- merge(DNAm_long, weights, by = 'CpG')
+
+
 print('Calculating the MRS')
 
 # Group by ID
@@ -83,6 +135,28 @@ MRS <- DNAm_long %>% group_by(!!sym(id_col)) %>%
   summarise(weighted_sum = sum(Weight*Mval, na.rm = T)) %>% as.data.frame()
 
 print(paste0('MRS calculated for ', nrow(MRS), ' people in the ', cohort, ' cohort'))
+
+###############################################################################
+
+# Distribution of the number of CpGs within the MRS (non-missing)
+
+###############################################################################
+
+# Showing as similar metric to the above missing plots
+# But another way of looking at it 
+
+
+num_cpgs <- DNAm_long %>%
+  group_by(IID) %>%
+  summarise(cpgs_mrs = sum(!is.na(Mval)))
+
+cpg_mrs_hist <- ggplot(num_cpgs, aes(x = cpgs_mrs)) + 
+  geom_histogram() +
+  theme_minimal() + 
+  labs(x = 'Number of CpGs included in the MS', y = 'Frequency') + 
+  ggtitle(paste0(cohort, ': Histogram of number of CpGs included in the MS'))
+
+ggsave(paste0(outdir, cohort, "_indiv_numcpgs_MRS.png"), cpg_mrs_hist, width = 8, height = 6, device='png', dpi=300)
 
 ###############################################################################
 
@@ -97,7 +171,7 @@ print(paste0('Plotting distributions across the whole ', cohort, ' sample'))
 MRS_dist <- ggplot(MRS, aes(x = weighted_sum)) + 
   geom_histogram() + 
   theme_minimal() + 
-  labs(x = 'Methylation Risk Score', y = 'Count')+
+  labs(x = 'Methylation Profile Score', y = 'Count')+
   ggtitle(cohort)
 
 ggsave(paste0(outdir, cohort, "_AD_MRS_overalldist.png"), MRS_dist, width = 8, height = 6, device='png', dpi=300)
@@ -132,7 +206,7 @@ print('Plotting MRS distributions for AD exposure cases and controls ')
 MRS_pheno_dists <- ggplot(ad_pheno_MRS, aes(x = weighted_sum, fill = as.factor(antidep))) + 
   geom_histogram(alpha = 0.8) + 
   theme_minimal() + 
-  labs(x = 'Methylation Risk Score', y = 'Count', fill = 'Self-reported AD use') +
+  labs(x = 'Methylation Profile Score', y = 'Count', fill = 'Self-reported AD use') +
   ggtitle(cohort)
 
 ggsave(paste0(outdir, cohort, "_AD_MRS_phenodist.png"), MRS_pheno_dists, width = 8, height = 6, device='png', dpi=300)

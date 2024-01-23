@@ -14,7 +14,7 @@ Arguments:
 
 *--DNAm* : DNAm file path e.g '/Users/data/DNAm/DNAm.rds'
 
-*--probes* : The file path for the list of probes used in the MRS e.g '/Users/data/DNAm/MRS_probes.txt'
+*--probes* : The file path for the list of significant probes in the MWAS e.g '/Users/data/DNAm/MWAS_signif_probes.txt'
 
 *--id_column* : The name of the identifier column in the data e.g 'IID'
 

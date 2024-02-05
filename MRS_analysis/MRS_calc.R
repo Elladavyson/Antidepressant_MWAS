@@ -3,7 +3,7 @@
 # Set up libraries and options/files
 
 ###############################################################################
-
+.libPaths('/exports/igmm/eddie/GenScotDepression/users/edavyson/R/x86_64-pc-linux-gnu-library/4.1')
 library(data.table)
 library(dplyr)
 library(optparse)
@@ -69,7 +69,7 @@ if(DNAm %>% select(starts_with("cg")) %>% ncol() != nrow(weights)){
   print(paste0('Number of probes read in for DNAm matches the number of weights provided: n = ', nrow(weights)))
 }
 
-missing_percentage <- DNAm %>% select(-IID) %>%
+missing_percentage <- DNAm %>% select(-!!sym(id_col)) %>%
   summarise_all(~ mean(is.na(.)) * 100) %>%
   gather(CpG, MissingPercentage) %>% arrange(desc(MissingPercentage))
 
@@ -147,7 +147,7 @@ print(paste0('MRS calculated for ', nrow(MRS), ' people in the ', cohort, ' coho
 
 
 num_cpgs <- DNAm_long %>%
-  group_by(IID) %>%
+  group_by(!!sym(id_col)) %>%
   summarise(cpgs_mrs = sum(!is.na(Mval)))
 
 cpg_mrs_hist <- ggplot(num_cpgs, aes(x = cpgs_mrs)) + 
@@ -200,7 +200,7 @@ print(paste0('Read in the Antidepressant exposure phenotype for ', cohort, ': Nu
              ' Number of controls: ',
              nrow(ad_pheno%>% 
                     filter(antidep==0))))
-ad_pheno_MRS <- merge(ad_pheno, MRS, by = 'IID')
+ad_pheno_MRS <- merge(ad_pheno, MRS, by = id_col)
 
 print('Plotting MRS distributions for AD exposure cases and controls ')
 MRS_pheno_dists <- ggplot(ad_pheno_MRS, aes(x = weighted_sum, fill = as.factor(antidep))) + 

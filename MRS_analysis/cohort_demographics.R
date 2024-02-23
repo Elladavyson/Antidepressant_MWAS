@@ -261,7 +261,7 @@ phenotype_summary <- function(phenotype, file) {
 
 ###############################################################################
 
-demographics_pheno <- merge(ad_pheno, demographics, by = id_col, all = TRUE)
+demographics_pheno <- merge(ad_pheno, demographics, by = id_col)
 cleaned_demographics_pheno <- demographics_pheno[complete.cases(demographics_pheno$antidep), ]
 demo_summary <- phenotype_summary(phenotype = 'antidep', file = cleaned_demographics_pheno)
 

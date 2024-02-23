@@ -136,6 +136,7 @@ table(demographics$smoking_var)
 
 } else {
   print('Smoking variable is already formatted')
+  demographics$smoking_var <- demographics$ever_smoke
   table(demographics$smoking_var)
 }
 
@@ -249,8 +250,8 @@ phenotype_summary <- function(phenotype, file) {
                       pull(val))) %>% 
     as.data.frame()
   
-  summary <- summary %>% select(phenotype, n, age ,bmi,  Female, Male, current_smoking, former_smoking, never_smoking, packyears, AD_MRS)
-  colnames(summary) <- c(phenotype, 'N', 'Age (%)','BMI (%)', 'Sex Female', 'Sex Male', 'Current smoker', 'Former smoker', 'Never smoker','Pack years', 'AD MRS (%)')
+  summary <- summary %>% select(phenotype, n, age ,bmi,  Female, Male, current_smoking, former_smoking, never_smoking, AD_MRS)
+  colnames(summary) <- c(phenotype, 'N', 'Age (SD)','BMI (SD)', 'Sex Female (%)', 'Sex Male (%)', 'Current smoker (%)', 'Former smoker (%)', 'Never smoker (%)', 'AD MRS (%)')
   return(summary)
 }
 
@@ -261,7 +262,8 @@ phenotype_summary <- function(phenotype, file) {
 ###############################################################################
 
 demographics_pheno <- merge(ad_pheno, demographics, by = id_col, all = TRUE)
-demo_summary <- phenotype_summary(phenotype = 'antidep', file = demographics_pheno)
+cleaned_demographics_pheno <- demographics_pheno[complete.cases(demographics_pheno$antidep), ]
+demo_summary <- phenotype_summary(phenotype = 'antidep', file = cleaned_demographics_pheno)
 
 # add MDD summary if that info is available 
 

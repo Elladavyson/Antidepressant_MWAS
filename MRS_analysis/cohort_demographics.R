@@ -27,7 +27,7 @@ option_list <- list(
   make_option('--id_column', type = 'character', default="IID", help = "Column names of identifier column in phenotype and covariate files", action = 'store'),
   make_option('--mrs', type = 'character', help = 'File path to antidepressant exposure MRS file (made using MRS_calc.R), column names (IID, AD_MRS and (optional) FID'),
   make_option('--pheno', type = 'character', help = 'File path to antidepressant exposure phenotype file, column names (IID, antidep and (optional) FID'),
-  make_option('--demo', type = 'character', help = 'File path to demographics file, column names (age, sex_coded, bmi, ever_smoke, pack_years and (optional) mdd'),
+  make_option('--demo', type = 'character', help = 'File path to demographics file, column names (age, sex_coded, bmi, ever_smoke and (optional) mdd'),
   make_option('--outdir', type = 'character', help = 'The filepath for output directory', action = 'store')
 )
 
@@ -98,7 +98,7 @@ ad_pheno <- ad_pheno %>% filter(!is.na(antidep))
 # age, sex, bmi, smoking behaviours and MDD (optional/if applicable)
 # load in vector of required demographic variables 
 
-req_demo_vars <- c('age', 'sex_coded', 'bmi', 'ever_smoke', 'pack_years')
+req_demo_vars <- c('age', 'sex_coded', 'bmi', 'ever_smoke')
 if(all(req_demo_vars %in% colnames(demographics))){
   print('All demographic variables loaded in and named correctly')
 } else {
@@ -177,8 +177,6 @@ phenotype_summary <- function(phenotype, file) {
                            ' (', signif(sd(age, na.rm = T),3), ')'), 
               bmi = paste0(signif(mean(bmi, na.rm = T),3), ' (', 
                            signif(sd(bmi, na.rm = T),3),')'), 
-              packyears= paste0(signif(mean(pack_years, na.rm = T),3),' (', 
-                                signif(sd(pack_years, na.rm = T),3), ')'), 
               AD_MRS= paste0(signif(mean(AD_MRS, na.rm = T),3),' (', 
                                 signif(sd(AD_MRS, na.rm = T),3), ')'), 
               

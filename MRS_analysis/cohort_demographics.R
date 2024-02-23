@@ -121,6 +121,8 @@ if(all(req_demo_vars %in% colnames(demographics))){
 print('Smoking variable')
 table(demographics$ever_smoke)
 
+if (!("character" %in% class(demographics$ever_smoke))) {
+print('Formatting the smoking variable to Current/Former/Never Smokers')
 demographics <- demographics %>% 
   mutate(smoking_var = case_when(
     ever_smoke == 1 ~ 'Current', 
@@ -131,6 +133,11 @@ demographics <- demographics %>%
 
 print('Smoking variable named')
 table(demographics$smoking_var)
+
+} else {
+  print('Smoking variable is already formatted')
+  table(demographics$smoking_var)
+}
 
 # sex 
 

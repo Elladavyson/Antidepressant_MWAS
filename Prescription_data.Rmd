@@ -1,0 +1,2220 @@
+---
+title: "All_antidep_prescrip_parsing"
+author: "Ella Davyson"
+date: "28/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.dim = c(10, 10))
+
+#libraries 
+
+library(lubridate) # dates 
+library(dplyr) # data wrangling 
+library(plyr) # ""
+library(data.table) # ""
+library(readr) # reading in data quickly
+library(stringr) # searching strings
+library(ivs)
+library(here)
+library(stringi) # string manipulation
+library(kableExtra) # making nice tables
+library(readxl)
+#library(xlsx) # reading in the excel tables
+library(ggalt) # graphs
+library(ggpubr) # graphs
+library(tidyr) # data wrangling
+library(UpSetR) # Upset Plot
+library(gameofthrones) # graph color scheme
+library(ggpattern) # graphs with patterns
+library(plotly) # interactive graphs
+library(ggcorrplot) # correlation p val 
+library(writexl) # writing out supplementary tables
+library(openxlsx) # ^^
+
+```
+
+#### Prescription data {.tabset}
+
+Using 2017 data file : '1617_0279_PIS.csv' Subsetting to those which have BNF code 0430 (all antidepressants)
+
+
+```{r}
+
+presc <- read_csv('edavyson/Antidep_methylation/data/1617_0279_PIS.csv') %>% as.data.frame()
+ADs <- presc[grepl("^04030", presc$PIBNFParagraphCode),]
+write.table(ADs, 'edavyson/Antidep_methylation/ADs_PIS_2017.tsv', sep = '\t', quote =F , row.names = F)
+
+```
+
+```{r}
+antideps <- read.table('edavyson/Antidep_methylation/data/ADs_PIS_2017.tsv', sep = '\t', header = T)#This is the 2017 prescription file subsetted to the PIBNF Paragraph Code 403030 - now changed to 0403030 (?)
+
+
+# converting to date format 
+antideps$DispDate <- ymd(antideps$DispDate)
+antideps$PrescDate <- ymd(antideps$PrescDate)
+antideps$PaidDate <- ymd(antideps$PaidDate)
+
+# removing flupentixol prescriptions from the dataset (post discussion 05/03 about being mainly prescribed as an anti-psychotic)
+
+antideps <- antideps %>% filter(PIApprovedName != 'FLUPENTIXOL')
+antideps <- antideps %>% mutate(formulation = ifelse(PIDrugFormulation == 'TABS', 'Tablets',
+                         ifelse(PIDrugFormulation == 'CAPS', 'Capsules',
+                                ifelse(PIDrugFormulation == 'SOLN', 'Solution',
+                                       ifelse(PIDrugFormulation == 'DROPS', 'Drops',
+                                              ifelse(PIDrugFormulation == 'LIQ','Liquid', NA))))))
+# get basic info 
+
+# BNF paragraph codes dictionary 
+
+BNF_code_dict <- list(`403010` = 'Tricyclic and related antidepressant drugs', `403020` = 'Monoamine-oxidase inhibitors (maois)', `403030` = 'Selective serotonin re-uptake inhibitors', `403040` = 'Other antidepressant drugs')
+
+# supplementary table for prescriptions (pre prescription parsing)
+
+get_antidep_info <- function(antidep_presc_df) {
+  antidep_info <- antidep_presc_df %>%
+  group_by(PIApprovedName) %>%
+  dplyr::summarize(
+    Num_prescriptions = n(),
+    Num_individuals = n_distinct(substitutionID),
+    Formulation =  toString(unique(na.omit(formulation))),
+    BNF_code = unique(PIBNFParagraphCode),
+    BNF = BNF_code_dict[[as.character(BNF_code)]]
+  )
+  antidep_info <- antidep_info %>% arrange(desc(Num_prescriptions)) %>% rename(`Prescription item approved name`= PIApprovedName, `N prescriptions` = Num_prescriptions, `N individuals` = Num_individuals, `BNF paragraph code` = BNF_code, `BNF paragraph name` = BNF) %>% as.data.frame()
+
+  
+  return(antidep_info)
+}
+
+
+
+antidep_info <- get_antidep_info(antideps)
+
+antidep_info_2 <- antideps %>%
+  group_by(substitutionID) %>%
+  dplyr::summarize(Num_prescriptions = n())
+
+antidepressant_type <- function(drug) {
+drug_antidep_type <- list(".*AMITRIPTYLINE.*|.*AMOXAPINE.*|.*CLOMIPRAMINE.*|.*DOSULEPIN.*|.*DOXEPIN.*|.*IMIPRAMINE.*|.*LOFEPRAMINE.*|.*MAPROTILINE.*|.*MIANSERIN.*|.*NORTRIPTYLINE.*|.*TRAZODONE.*|.*TRIMIPRAMINE.*" = "TCAs", 
+                          ".*ISOCARBOXAZID.*|.*MOCLOBEMIDE.*|.*PHENELZINE.*|.*TRANYLCYPROMINE.*" = "MAOs", 
+                          ".*CITALOPRAM.*|.*DULOXETINE.*|.*ESCITALOPRAM.*|.*FLUOXETINE.*|.*FLUVOXAMINE.*|.*PAROXETINE.*|.*SERTRALINE.*" = "SSRIs", 
+                          ".*AGOMELATINE.*|.*DULOXETINE.*|.*MIRTAZAPINE.*|.*NEFAZODONE.*|.*OXITRIPTAN.*|.*REBOXETINE.*|.*TRYPTOPHAN.*|.*VENLAFAXINE.*|.*VORTIOXETINE.*" = "Other")
+
+  drug_type <- lapply(names(drug_antidep_type), function(regex) {
+  if(str_detect(drug, regex)) {
+    return(drug_antidep_type[[regex]])
+  }
+})
+  drug_type <- unlist(drug_type)
+
+  if (is.null(drug_type[1])) {
+    return(NA_character_)
+  } else {
+    return(drug_type[1])
+  }
+  
+}
+
+
+
+
+
+write.table(antidep_info, 'antidep_prescrip_info_26_05.tsv', sep = '\t', row.names = F, quote = F)
+
+antideps <- antideps %>% rowwise() %>% mutate(antidep_type = antidepressant_type(PIApprovedName)) %>% as.data.frame()
+##blood draw appointment info ##
+
+appt <- read.csv('Methylation_antidep/methylation_data/appt.csv')
+appt$appt <- dmy(appt$appt)
+
+## linker file ## 
+iddata <- read_excel('Methylation_antidep/methylation_data/ST record linkage key.xlsx', 1)
+
+appt_id <- merge(appt, iddata, by= 'id')
+
+## those who have methylation ## 
+# n = 18,854 - the GRM corrected data oii file 
+oii_file <- read.table('Methylation_antidep/methylation_data/GS20K_GRMcorrected.oii')
+colnames(oii_file)[c(1:2)]<- c('FID', 'IID')
+
+# print the information about the antidepressant prescriptions 
+
+tab_antidep_info
+
+## graph about the antidepressant prescriptions 
+fill_colors <- c("#82B5C4", "#A9BC7E", "#D7C42A", "#CDA25C", "#C37E90")
+
+antidep_barplot <- ggplot(antidep_info, aes(x= PIApprovedName, y = Num_prescriptions, fill = antidep_type)) + geom_bar(stat= "identity") + coord_flip() + labs(x = 'Antidepressant', y = 'Number of Prescriptions') + scale_fill_got(discrete = TRUE, 'Antidepressant Class', labels = c('MAOs', 'Other', 'SSRIs', 'TCAs'), option = 'Margaery') + theme_minimal()+ geom_text(aes(label = Num_prescriptions), hjust = -0.5, color = "black", size = 3)+ ylim(0,50000)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/AD_presc_num_barplot.png', plot = antidep_barplot, width = 8, height = 6, device='png', dpi=300)
+
+antidep_hist_num <- ggplot(antidep_info_2, aes(x = Num_prescriptions)) +
+geom_histogram(binwidth = 10, color = 'black', fill = 'grey40') +
+  theme_minimal() + 
+  labs(x = 'Number of Prescriptions per person', y= 'Count')
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/AD_hist_num.png', plot = antidep_hist_num, width = 8, height = 6, device='png', dpi=300)
+
+```
+
+Looking at the distribution of prescription formulations (tablets vs liquids)
+
+:   133000 prescriptions are tablets
+
+:   40000 prescriptions are capsules
+
+:   419 are in solution
+
+:   160 are in liquid
+
+:   57 are in drops
+
+:   1 is in suspension (?)
+
+```{r}
+# it is mostly CAPS or TABS 
+
+table(antideps$PIDrugFormulation)
+
+# looking at the medications which are prescribed as liquids
+
+table(antideps %>% filter(!(PIDrugFormulation %in% c('CAPS','TABS'))) %>% select(PIApprovedName))
+
+```
+
+## Parsing dosage instructions {.tabset}
+
+Separating out into tablets and liquids
+
+```{r}
+# make an original copy of the dataframe before running the parsing code on the dosage instructions 
+
+antidep_original <- antideps
+# original numbers for the manuscript 
+
+# number of antidepressant prescriptions 
+
+nrow(antidep_original)
+
+# number of people with antidepressant prescriptions 
+
+antidep_original %>% pull(substitutionID) %>% unique() %>% length()
+
+# converting all the words to numbers 
+
+antideps <- antideps %>% mutate(dosage= str_squish(prescriptionInstruction)) %>% mutate(dosage = str_replace_all(dosage, c("one"="1", "two"=2, "three"=3, "four"=4, "five"=5)))
+
+
+antidep_tabs <- antideps %>% filter(PIDrugFormulation == 'TABS' | PIDrugFormulation == 'CAPS')
+all_liquid_antidep <- antideps %>% filter(!(PIDrugFormulation  %in% c('CAPS', 'TABS')))
+
+table(antidep_tabs$ePRNDName)
+table(all_liquid_antidep$ePRNDName) # one prescription which should be a tablet 
+
+
+antideps[which(antideps$ePRNDName == 'FLUOXETINE CAPS 20MG' & antideps$PIDrugFormulation == 'SOLN'),'PIItemStrength'] <- '20 MG'
+antideps[which(antideps$ePRNDName == 'FLUOXETINE CAPS 20MG' & antideps$PIDrugFormulation == 'SOLN'),'PIDrugFormulation'] <- 'CAPS'
+
+# re deriving the tablets and liquids following this liquids- tablet reassingment
+antidep_tabs <- antideps %>% filter(PIDrugFormulation == 'TABS' | PIDrugFormulation == 'CAPS')
+all_liquid_antidep <- antideps %>% filter(!(PIDrugFormulation  %in% c('CAPS', 'TABS')))
+
+# how many tablet and liquid prescriptions are in the dataset pre parsing 
+nrow(antidep_tabs)
+nrow(all_liquid_antidep)
+
+```
+
+### Tablets/Capsules
+
+Running some sanity checks that the drugs which we have here are antidepressants
+
+```{r antidepressant_names_present}
+## antidepressant names 
+
+Tricyclic_antidep <- c(".*A(M|N)(M)?(I|Y|A)TR(IP)?(T(A)?|TT)?(Y)?(PT(Y|A)?)?(L|LL|I(LE)?|IL)?((A)?I|E|II)?(NE|YN|TYLE)?.*", ".*AMOXAPINE.*", ".*CLOMI(M)?PRA(M|N)INE.*", 
+  ".*DOSULEPIN.*", ".*DOXEPIN.*", ".*IM(I|A)PR(A|I)MINE.*", 
+  ".*LOFEPRAMINE.*", ".*MAPROTILINE.*", 
+  ".*MIANSERIN.*", ".*NORTRIPTYLINE.*", ".*TR(A|O)Z(O|A)DONE.*", 
+  ".*TRIMIPRAMINE MALEATE.*", ".*DOTHIEPIN.*", ".*SINEPIN.*")
+
+MAO_antidep <- c(".*ISOCARBOXAZID.*", ".*MOCLOBEMIDE.*", 
+  ".*PHENELZINE.*", ".*TRANYLCYPROMINE.*")
+
+SSRI_antidep <- c(".*C(I|E|Y)(T|L)(R)?(A)?(L|T)?((T)?O|A|I)P(R|K|L)?(A|I)(M|N).*", ".*(C(I|E|Y)(T|L)(R)?(A|LTO)?(OL|L(O)?|T(OL)?)?((T)?O|A|I)P(R|K|L|H)?(A|I)(M|N)|CIPRAMIL).*",
+  ".*DULOXETINE.*", ".*ESCITALOPRAM.*", ".*FL(U|O)?(R)?(O|X|E|OK)?(X|O|EX)(O|C|A)?(E|I)?T(E)?INE.*",
+  ".*(FLUVOXAMINE(MALEATE)?|FAVRIN|LUVOX).*", ".*P(A|E)ROX(E|A|I)?T(I|E)NE.*", 
+  ".*SERTRALINE.*", ".*PRO(Z|S)AC.*", ".*S(E|A)ROX(T)?AT.*", ".*C(I|Y)PRALEX.*", ".*PAXIL.*", ".*CIPRAMIL.*", ".*ATENIX.*", ".*CYMBALTA.*")
+other_antidep <- c(".*AGOMELATINE.*", ".*DULOXETINE.*", 
+  ".*FLUPENTIXOL.*", ".*FLUANXOL.*", ".*(M(I|A)RT(R)?AZ(A|I|E)P(I|E)NE|ZISP(E|I)N).*", ".*NEFAZODONE.*", 
+  ".*OXITRIPTAN.*", ".*REBOXETINE.*", ".*TRYPTOPHAN.*", ".*VEN(L)?AF(L)?(A|E)(X|Z)(Z)?IN(E)?.*", ".*EF(F)?EXOR.*",
+  ".*VORTIOXETINE.*")
+
+# pasting all the antidepressant names together
+antidep_names <- c(Tricyclic_antidep, MAO_antidep, SSRI_antidep, other_antidep)
+# pasting a "|' between them so recognised by regex to look for ANY of the strings to match on 
+antidep_names <- paste(antidep_names, collapse = "|")
+  
+### some sanity checking/altering ###
+### in all the unique drug names, can you find any which are not matched by the antidepressant names
+
+non_matching_tabs <- unique(antidep_tabs$ePRNDName)[!(str_detect(unique(antidep_tabs$ePRNDName),antidep_names))]
+
+# filtering out these people who have the ePRNDName not being an antidepressant. 
+# however, when you search the PIPrescribableItem, they are all matched by antidepressants
+antidep_tabs %>% filter(ePRNDName %in% non_matching_tabs[-1])
+
+### here save a copy of the antidep table for the supplementary material (about imputing the ambiguous prescriptions)
+
+write_rds(antidep_tabs, 'Data/GenScot/Methylation_antidep/antidep_proc_preparsed.rds')
+```
+
+Imputing the blank and non informative prescriptions
+
+```{r imputing_uninformative_prescriptions}
+##### TABLETS #####
+
+### filter the prescriptions which have no relevant information (either blank, or 'as directed/advised'), and infer what the instructions are likely to be by taking the most common prescription instruction in the year prior to the prescription, if the individual has multiple prescriptions ### 
+
+# convert the NA values in dosage instructions 
+# to be empty strings for str_detect()
+
+antidep_tabs$dosage <- ifelse(is.na(antidep_tabs$dosage), "", antidep_tabs$dosage)
+ambig_indexes <- which(str_detect(antidep_tabs$dosage, "^$") | str_detect(antidep_tabs$dosage, "^(to be taken\\s*|(for\\s*)?use\\s*|take\\s*)?as (dir|directed|advised|discussed).*(to be taken\\s*|(for\\s*)?use\\s*|take\\s*)?$") | str_detect(antidep_tabs$dosage, "^(mdu|asd)$") | str_detect(antidep_tabs$dosage, "^non formulary please choose citalopram instead$"))
+
+print(paste0('There are ', length(ambig_indexes), ' tablet prescriptions with ambiguous prescriptions for ', antidep_tabs[ambig_indexes,] %>% pull(substitutionID) %>% unique() %>% length(), ' individuals'))
+# document how many of the indexes are imputed by the last year prescriptions 
+# using the counter object
+counter <- 0 
+tabs_ambig_last_yr <- 0
+for(i in ambig_indexes){
+  ID <- antidep_tabs$substitutionID[i]
+  print(ID)
+  prescrip_date <- antidep_tabs$PrescDate
+  ambig_person_prescriptions_lstyear <- antidep_tabs %>% filter(substitutionID == ID & (PrescDate< prescrip_date) & (PrescDate>prescrip_date-days(365)))
+if (dim(ambig_person_prescriptions_lstyear)[1]>0){
+  print('There are prescriptions in the last year')
+  most_common_instruction  <- (names(table(ambig_person_prescriptions_lstyear$prescriptionInstruction) %>% sort(decreasing = TRUE)))[1]
+  antidep_tabs[i, 'dosage'] <- most_common_instruction
+  counter <- counter + 1
+} else {
+  print('No prescriptions in the last year')
+  most_common_instruction <- '1 tab a day'
+  antidep_tabs[i, 'dosage'] <- most_common_instruction
+} 
+}
+
+# save this file and can read it in after (doing this loop takes a while and no point redoing it each time)
+
+#write.table(antidep_tabs, 'edavyson/Antidep_methylation/ADs_imputed_prescrip.tsv', sep = '\t', row.names = F, quote = F)
+
+```
+
+```{r reading_in_imputed_file}
+# if reading the parsed file in here 
+#antidep_tabs <- read.table('edavyson/Antidep_methylation/data/ADs_imputed_prescrip.tsv', sep = '\t', #header= T)
+#antidep_tabs$DispDate <- ymd(antidep_tabs$DispDate)
+#antidep_tabs$PrescDate <- ymd(antidep_tabs$PrescDate)
+#antidep_tabs$PaidDate <- ymd(antidep_tabs$PaidDate)
+
+```
+
+Begin Parsing the instruction text to get tabs per day etc
+
+Word Filters:
+
+```{r word_filters_preparsing}
+
+## replace 'then stop' to 'and stop' to filter out those which are 'then a change in dose' to those which state 'then stop'
+
+antidep_tabs$dosage <- str_replace_all(antidep_tabs$dosage,'then stop', 'and stop')
+
+#######################################################################
+
+#WORD FILTERS TO EXCLUDE AND THEIR VARIATIONS
+
+#I.E titrating_words are words that indicate a titrating dose 
+# However there are variations where we would want some of the words 
+# like 'AND', this could be 1 a day for a week and then 2 a day for a week
+# and we want to exclude these, but excluding AND might also exclude those 
+# which are '1 and a half a day', which we would want to capture 
+# in this instance I have made variations of the filters which do not have the 
+# word AND in called imaginatively titrating_words_noAND ETC
+
+#######################################################################
+
+
+### words which indicate a titrating dose in the prescription ###
+
+### This is all the words we are filtering out for prescriptions instructions which include information about a change in dose ### 
+
+titrating_words <- "(then|gradually|increasing|reducing|increas(e)?|until|occasions|reduce|\\band\\b|&|ther(e)?(\\s)?after|(start)?after (\\d|stopping|finishing|cessation|a week)|reduicng|cycle|menses|redcue|followed by|inc|if tolerated|then take|every \\d days|wean(ed)?|\\bor\\b)"
+
+### Use this filter when we want OR to be in the instruction (such as those which are 1 OR 2 (1.5))
+
+titrating_words_noOR <- "(then|gradually|increasing|reducing|increas(e)?|until|occasions|reduce|\\band\\b|&|ther(e)?(\\s)?after|(start)?after (\\d|stopping|finishing|cessation|a week)|reduicng|cycle|menses|redcue|followed by|inc|if tolerated|then take|every \\d days|wean(ed)?)"
+### Use this filter when we want AND to be in the instruction (such as those which are 1 AND a half (1.5))
+titrating_words_noAND <- "(then|gradually|increasing|reducing|increas(e)?|until|occasions|reduce|&|ther(e)?(\\s)?after|(start)?after (\\d|stopping|finishing|cessation|a week)|reduicng|cycle|menses|redcue|followed by|inc|if tolerated|then take|every \\d days|wean(ed)?|\\bor\\b)"
+### Use this filter when we want NDAYS to be in the instruction (such as those which are '1 3 times a day' (3))
+titrating_words_noNDAYS <- "(then|gradually|increasing|reducing|increas(e)?|until|occasions|reduce|\\band\\b|&|ther(e)?(\\s)?after|(start)?after (\\d|stopping|finishing|cessation|a week)|reduicng|cycle|menses|redcue|followed by|inc|if tolerated|then take|wean(ed)?|\\bor\\b)"
+### Use this filter when we want NDAYS to be in the instruction (such as those which say until a date (go by the presc date) (3))
+titrating_words_noUNTIL <-  "(then|gradually|increasing|reducing|increas(e)?|occasions|reduce|\\band\\b|&|ther(e)?(\\s)?after|(start)?after (\\d|stopping|finishing|cessation|a week)|reduicng|cycle|menses|redcue|followed by|inc|if tolerated|then take|every \\d days|wean(ed)?|\\bor\\b)"
+
+###filtering out words which don't reflect one a day such as 0.5, times (2 times a day), bd (means twice a day), 1-2 (every 1-2 days), every second/alternate days/half###
+
+one_a_day_words <- "(times|twice|bd|1-2|\\d\\s*-\\s*\\d|1\\s*\\/\\s*2|0\\.5|second|every (other|2nd) day|half|alt(ernate)?|2\\/1)"
+#use this filter when you want the word twice (1 tablet twice a day (2))
+one_a_day_words_noTWICE <- "(times|1-2|\\d\\s*-\\s*\\d|1\\s*\\/\\s*2|0\\.5|second|every (other|2nd) day|half|alt(ernate)?|2\\/1)"
+#use this filter when you want times (1 tablet 3 times a day (3))
+one_a_day_words_noTIMES <- "(bd|twice|1-2|\\d\\s*-\\s*\\d|1\\s*\\/\\s*2|0\\.5|second|every (other|2nd) day|half|alt(ernate)?|2\\/1)"
+#use this filter when you want half (half a tablet (1/2))
+one_a_day_words_noHALF <- "(times|twice|bd|1-2|\\d\\s*-\\s*\\d|second|every (other|2nd) day|alt(ernate)?|2\\/1)"
+#use this filter when you want to pick up alternate days (1 tablet every other day (0.5))
+one_a_day_words_noALT <- "(times|twice|bd|1-2|\\d\\s*-\\s*\\d|1\\s*\\/\\s*2|0\\.5|half|2\\/1)"
+#use this filter when you want to pick out prescriptions which say 1-2 tablets 
+one_a_day_words_noTWOORONE <- "(times|twice|bd|0\\.5|second|every (other|2nd) day|half|alt(ernate)?)"
+
+###filter out the prescriptions which begin with a mg dose (rather than num tablets a day) ###
+mg_doses <- "^(\\d\\d(\\d)?)"
+dose_only_words <- "\\d\\d\\s*(mg)?\\/\\d\\d\\s*mg"
+
+```
+
+```{r parsing_instructions}
+antidep_tabs_proc <- antidep_tabs %>% mutate(tabs_per_day=case_when(
+  
+    str_detect(dosage, "^\\d\\s*.*(once\\s*)?(daily|dialy|dai'y|daly|each|morning|in the morning|(m)?ane|a day|in am|m|every (day|night)|morn|at night|n|od|d)") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~as.numeric(stri_extract_first_regex(dosage, pattern ="(\\d)")),
+    
+    str_detect(dosage, "^(take(r| take)?|taike)\\s*\\d(\\s*)") & str_detect(dosage, titrating_words, negate = TRUE) &  str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~ as.numeric(stri_extract_first_regex(dosage, pattern="(\\d)")),
+    
+    str_detect(dosage, "^daily\\s*(dmonthly|with food|(or )?as directed|dispense.*|(weekly)? disp|disp (wkly|weekly)?)?\\s*\\d\\s*(tab(s)?|cap(s)?)?( disp monthly)?$") ~ as.numeric(stri_extract_first_regex(dosage, pattern='(\\d)')),
+    
+    str_detect(dosage, "^\\d\\s*(tab\\s*(s|let|lets|let\\(s\\)|ls|l)?|cap(s|sules|sule|sule\\(s\\))?|tblet|tbl)* ((once|to be taken)?\\s*daily|mane|(once )?a day|nocte|dily|every day|at night|to be taken|once a day|in (the )?morning( after food)?|each morning(\\.)?|daiy|od|in (the)? evening|as directed|pd|of|am|morning|(per )?day)") & str_detect(dosage, titrating_words, negate = TRUE) &  str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE)~ as.numeric(stri_extract_first_regex(dosage, pattern="(\\d)")),
+    
+    str_detect(dosage, "^(take|takwe|tak|use) \\d") & str_detect(dosage, titrating_words, negate = TRUE) &  str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~ as.numeric(stri_extract_first_regex(dosage, pattern = "(\\d)")),
+    
+    str_detect(dosage, "^\\d (tab(let|lets|let\\(s\\)(\\.)?)?|cap(s|sules|sule)?|tbl)")& str_detect(dosage, titrating_words, negate = TRUE) &  str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~ as.numeric(stri_extract_first_regex(dosage, pattern = '(\\d)')),
+    
+    str_detect(dosage, "^((in the)? morning|mane|at night|nocte).*(\\d)") & str_detect(dosage, titrating_words, negate = TRUE) &  str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE)~ as.numeric(stri_extract_first_regex(dosage, pattern = '(\\d)')),
+    
+    str_detect(dosage,"1 or 2")& str_detect(dosage, titrating_words_noOR, negate = TRUE) &  str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~ 1.5,
+    
+    str_detect(dosage,"^(?!1 and )(1\\/2|take 1\\/2|(daily )?half)")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noHALF, negate = TRUE)& str_detect(dosage, mg_doses, negate = TRUE)~ 0.5,
+    
+    str_detect(dosage, "^(every day|once daily|once a day|1/morn|od|1/day|every morning|daily dispense weekly 1 tab|20mg daily|take every day|mane disp weekly 1 tab|0ne daily|ome daily|od for 2w then stop|1on|1\\/\\day from date|take 1; daily|on a day|to be used each day|oen tablet\\(s\\) daily|mane|at night( avoid alcohol.*)?)$")~ 1,    
+    
+    str_detect(dosage,"^\\d.*(twice|bd|morning and night|2 times daily)") & str_detect(dosage, titrating_words_noAND, negate = TRUE) &  str_detect(dosage, one_a_day_words_noTWICE, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~ as.numeric(stri_extract_first_regex(dosage, pattern = "(\\d)"))*2,
+    
+    str_detect(dosage,"twice") & str_detect(dosage, titrating_words, negate = TRUE) &  str_detect(dosage, one_a_day_words_noTWICE, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) ~ 2,
+    str_detect(dosage, "^(tw0 daily|1 tab 2 times.*|.*2mane for depression|(take )?1 (cap|tbl) in the morning and 1 (cap|tbl) at night)$") ~ 2,
+    
+    str_detect(dosage,"^\\d.*(every other day( days)?|(on )?alt(ernate)? days|every 2 days|alt days|every (2nd|second) day).*") & str_detect(dosage, titrating_words_noAND, negate = TRUE) & str_detect(dosage, one_a_day_words_noALT, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE)~ (as.numeric(stri_extract_first_regex(dosage, '(\\d)'))/2),
+    
+    str_detect(dosage, "^(alt(ernate)?|every (second|other) day).*")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noALT, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)~ 0.5,
+    
+    str_detect(dosage,"^(every day|in (the )?morning|at night|daily|i|start on)") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 1,
+    
+    str_detect(dosage, "(1(1)? and (a )?half.*)")  & str_detect(dosage, titrating_words_noAND, negate = TRUE) & str_detect(dosage, one_a_day_words_noHALF, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)  ~ 1.5,
+    
+    str_detect(dosage, '^as directed \\d (cap|tab)$') ~ as.numeric(stri_extract_first_regex(dosage, '(\\d)')),
+    
+    str_detect(dosage, "^(take(r| take)?|taike)\\s*(\\d)?(\\s*).*(every other day( days)?|(on )?alt(ernate)? days|every 2 days|alt days|every (2nd|second) day).*") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noALT, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)~ 0.5,
+    
+    str_detect(dosage, "^(disp(ense(d)?)?|monthly|weekly)\\s*(dispense(d)?|monthly|weekly)\\s*\\d") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(stri_extract_first_regex(dosage, '(\\d)')),
+    
+   str_detect(dosage,"^take half") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noHALF, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)  ~ 0.5,
+   
+   str_detect(dosage, "(1\\s*-\\s*2|1\\.5|2\\/1)")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noTWOORONE, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~1.5,
+   
+      str_detect(dosage, "(every (3|3rd|third) day(s)?)") & str_detect(dosage, titrating_words_noNDAYS, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 1/3,
+   
+   str_detect(dosage, "(1|disp).*(3)")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noTIMES, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~3,
+   
+   str_detect(dosage, "^(3).*(1)")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noTIMES, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~3,
+   
+   str_detect(dosage, "^(2 bd|1 4 times a day)$") ~ 4,
+   
+   str_detect(dosage, "\\d.*or as directed") & str_detect(dosage, titrating_words_noOR, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(stri_extract_first_regex(dosage, '(\\d)')),
+   
+   str_detect(dosage, "^(take|tablet(s|\\(s\\))?)") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 1,
+   
+   str_detect(dosage, "((1 cap)? every 2nd day)") & str_detect(dosage, titrating_words_noAND, negate = TRUE) & str_detect(dosage, one_a_day_words_noALT, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)  ~ 0.5,
+   
+   str_detect(dosage, "^1 cap every 2-3 days$") ~ 1/2.5,
+   
+   str_detect(dosage, "^(take (2\\/1|2 and 1|1 or 2).*alternate days)")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 1.5/2,
+  TRUE ~ 10000000))
+
+# look at the instructions I have not captured (currently 13942) with 1962 unique instructions
+
+uniq_instruct <- antidep_tabs_proc %>% filter(tabs_per_day == 1e+07) %>% select(dosage) %>% unique()
+
+uniq_instruct <- uniq_instruct$dosage[str_detect( uniq_instruct$dosage, titrating_words,negate = TRUE)]
+
+#uniq_instruct[str_detect(uniq_instruct,"(to)?.*take(n)?") & str_detect(uniq_instruct, one_a_day_words, negate = TRUE)]
+
+# currently 267 instructions which do not have titrating words which I am missing
+# however, only 5480 prescriptions not coded (out of 173938) - around 3 % (missing)
+
+# for testing on regex 101
+#readr::write_lines(uniq_instruct, 'Data/GenScot/tmp_antidep_unique.txt')
+
+antidep_tabs_no_cond <- antidep_tabs_proc %>% filter(tabs_per_day == 10000000)
+antidep_tabs_parsed <- antidep_tabs_proc %>% filter(tabs_per_day != 10000000)
+
+antidep_tabs_parsed <- antidep_tabs_parsed %>% mutate(strength_mg_nominal=as.numeric(str_match(PIItemStrengthUOM, "(\\d+\\.\\d+|\\d+) MG")[,2])) %>% 
+  mutate(strength_mg = strength_mg_nominal) %>% 
+  mutate(dosage_mg_per_day = strength_mg * tabs_per_day, dosage_mg_total = PaidQuantity*strength_mg)
+
+
+```
+
+```{r sanity_checking}
+
+# check some of the higher numbers instructions
+table(antidep_tabs_parsed$tabs_per_day)
+# command for looking at all the prescription instructions for the 'X' number of tablets a day for sanity checking 
+# unique(antidep_tabs_parsed %>% filter(tabs_per_day == 5) %>% select(dosage))
+
+# there are some entries which are coded as 0 tablets a day because of 0ne 
+
+antidep_tabs_parsed[grepl('(take)?.*(0ne daily|0ne at night|0ne as required|0ne tablets daily|8pm 1 tab)', antidep_tabs_parsed$dosage),'tabs_per_day'] <- 1
+antidep_tabs_parsed[grepl('5tab daily at 7pm for pain abdo', antidep_tabs_parsed$dosage),'tabs_per_day'] <- 5
+antidep_tabs_parsed[grepl('3tab daily at 7pm for pain abdo', antidep_tabs_parsed$dosage),'tabs_per_day'] <- 3
+antidep_tabs_parsed[grepl('5 days per week 1 mane', antidep_tabs_parsed$dosage),'tabs_per_day'] <- 5/7
+antidep_tabs_parsed[grepl('0ne tab bd', antidep_tabs_parsed$dosage),'tabs_per_day'] <- 2
+
+
+
+```
+
+### Liquids
+
+Parsing Liquid Medications
+
+```{r}
+
+write_rds(all_liquid_antidep, 'edavyson/Antidep_methylation/data/liquid_antidep_presc.rds')
+table(all_liquid_antidep$PIApprovedName)
+table(all_liquid_antidep$PIDrugFormulation)
+
+# replace the missing values with "", for detection in the imputation step using str_detect("^$")
+
+all_liquid_antidep$dosage <- ifelse(is.na(all_liquid_antidep$dosage), "", all_liquid_antidep$dosage)
+all_liquid_antidep$prescriptionInstruction <- ifelse(is.na(all_liquid_antidep$prescriptionInstruction), "", all_liquid_antidep$dosage)
+
+liquid_strengths = list('CITALOPRAM'= "40 MG/ML", "PAROXETINE" = "2 MG/ML", "FLUOXETINE" = "4 MG/ML", 'AMITRIPTYLINE' = '5 MG/ML', 'LOFEPRAMINE' = '14 MG/ML', 'MIRTAZAPINE' = '15 MG/ML', 'TRAZODONE HYDROCHLORIDE' = '10 MG/ML')
+
+# create a strength column for each ML 
+
+all_liquid_antidep <- all_liquid_antidep %>% rowwise() %>% mutate(PIItemStrengthUOM_perml = liquid_strengths[[PIApprovedName]]) %>% as.data.frame()
+
+### DROP formulation - all CITALOPRAM ###
+
+print('CITALOPRAM')
+
+antidep_drops <- all_liquid_antidep %>% filter(PIApprovedName == 'CITALOPRAM' & PIDrugFormulation == 'DROPS')
+
+
+print(paste0('There were ', dim(antidep_drops)[1], ' prescriptions of Antidepressant CITALOPRAM drops (2MG/ML)'))
+print(paste0('There were 0 prescriptions of Antidepressant CITALOPRAM liquid (2MG/ML) which had ambiguous instructions (blank) or "as directed'))
+
+antidep_drops <- antidep_drops %>% 
+  mutate(drops_per_day =  case_when(
+        str_detect(dosage, "\\d+ .*drops") & str_detect(dosage, titrating_words_noOR, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(dosage, "(\\d+) .*drops")[,2]),
+        str_detect(dosage, "\\.5ml")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noHALF, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 10,
+        str_detect(dosage, "1ml")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 20,
+        str_detect(dosage, "8 drops")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ 8, 
+        TRUE ~ 10000000
+    )) %>%
+  mutate(dosage_ml_per_day = drops_per_day/20) %>% 
+  mutate(strength_mg_per_ml = as.numeric(str_match(PIItemStrengthUOM, "(\\d+) MG/ML")[,2])) %>%
+  mutate(dosage_mg_per_day_drops = strength_mg_per_ml*dosage_ml_per_day, dosage_mg_total_drops = PaidQuantity * strength_mg_per_ml) %>%
+  mutate(dosage_mg_per_day = dosage_mg_per_day_drops/8 *10, dosage_mg_total = dosage_mg_total_drops/8 *10)
+
+antidep_drops_parsed <- antidep_drops %>% filter(drops_per_day != 10000000)
+
+print(paste0('CITALOPRAM: ',dim(antidep_drops_parsed)[1], ' prescriptions after parsing the prescription text (there were ', (antidep_drops %>% filter(drops_per_day == 10000000) %>% dim())[1], ' titrating prescriptions which are discarded)'))
+
+### LIQUID, SOLN and SUSP formulation together 
+
+antidep_other_liqs <- all_liquid_antidep %>% filter(PIDrugFormulation != 'DROPS')
+ambig_indexes_liqs <- which(str_detect(antidep_other_liqs$dosage, "^$") | str_detect(antidep_other_liqs$dosage, "^(to be taken\\s*|(for\\s*)?use\\s*|take\\s*|to be used )?as (dir|directed|advised)$"))
+
+print(paste0('There were ', dim(antidep_other_liqs)[1], ' prescriptions of other liquids'))
+print(paste0('There were ', length(ambig_indexes_liqs) , ' prescriptions of other liquid prescriptions which had ambiguous instructions (blank) or "as directed'))
+
+antidep_other_liqs[ambig_indexes_liqs,] %>% pull(substitutionID) %>% unique() %>% length()
+
+for (i in ambig_indexes_liqs) {
+  ID <- antidep_other_liqs$substitutionID[i]
+  prescrip_date <-antidep_other_liqs$PrescDate[i]
+  ambig_person_prescriptions_lstyear <- antidep_other_liqs %>% filter(substitutionID == ID & (PrescDate< prescrip_date) & (PrescDate>prescrip_date-days(365)))
+if (dim(ambig_person_prescriptions_lstyear)[1]>0){
+  most_common_instruction  <- (names(table(ambig_person_prescriptions_lstyear$prescriptionInstruction) %>% sort(decreasing = TRUE)))[1]
+  antidep_other_liqs[i, 'dosage'] <- most_common_instruction
+} else {
+ antidep_other_liqs[i, 'dosage'] <- 'ambiguous'
+} 
+}
+
+print(paste0('After imputing there remains: ', (dim(antidep_other_liqs %>% filter(dosage == 'ambiguous')))[1], ' ambiguous prescriptions'))
+
+#removing those which have 1x and '1 ' at the beginning of the dosage (how annoying) 
+antidep_other_liqs[str_detect(antidep_other_liqs$dosage, "^1x"), 'dosage'] <- gsub('1x', '',antidep_other_liqs[str_detect(antidep_other_liqs$dosage, "^1x"), 'dosage'])
+antidep_other_liqs[str_detect(antidep_other_liqs$dosage, "1 5 ml spoonful"), 'dosage'] <- gsub('1 ', '',antidep_other_liqs[str_detect(antidep_other_liqs$dosage, "1 5 ml spoonful"), 'dosage'])
+
+#converting the entry (25mls = 10mg every day), which looks like it should be 2.5
+
+antidep_other_liqs[str_detect(antidep_other_liqs$dosage, "25 mls = 10 mg every day"), 'dosage'] <- gsub("25 mls = 10 mg every day","2.5ml a day",antidep_other_liqs[str_detect(antidep_other_liqs$dosage, "25 mls = 10 mg every day"), 'dosage'])
+
+
+
+antidep_other_liqs<- antidep_other_liqs %>% mutate(dosage_ml_per_day = case_when(
+ str_detect(dosage, "^\\d+.*daily") & str_detect(dosage, titrating_words_noAND, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)~ as.numeric(str_match(dosage, "(\\d+)[\\.\\d+]*")[,1]),
+ 
+ str_detect(dosage, "^\\d+.*once a day")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~as.numeric(str_match(dosage, "(\\d+)[\\.\\d+]*")[,1]),
+ 
+ str_detect(dosage, "^\\d+.*every second day")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noALT, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(dosage, "(\\d+)[\\.\\d+]*")[,1])/2,
+ 
+ str_detect(dosage, "^\\d+.*spoonful to be taken twice a day*")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noTWICE, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(dosage, "^[^\\d]*\\d+[^\\d]+(\\d+)\\.*")[,2])*2,
+ 
+ str_detect(dosage, "take 5ml once daily at night")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)~ 5,
+ 
+ str_detect(dosage, "^5 to 7.5ml daily$") ~ 6.25, #1
+ 
+  str_detect(dosage, "^\\d+[\\.\\d+]*(\\s)?[ml|mls][^mg].*[daily|mane|in the morning|each morning|once a day|for a week|every day|in am|day]")& str_detect(dosage, titrating_words_noAND, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(antidep_other_liqs$dosage, "(\\d+)[\\.\\d+]*")[,1]), 
+ #
+  str_detect(dosage, "^(daily)|^(take)|^(at night)|^(in the morning).*\\d+.*[ml|mls]*") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(dosage, "(\\d+)[\\.\\d+]*")[,1]), 
+ 
+  str_detect(dosage, "\\d+.*mg daily") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(antidep_other_liqs$dosage, "(\\d+)[\\.\\d+]*")[,1])/4, 
+ 
+  str_detect(dosage, "\\d+.*(on alternate days)")& str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words_noALT, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE) ~ as.numeric(str_match(dosage, "(\\d+)[\\.\\d+]*")[,1])/2, #1
+ 
+  str_detect(dosage, "^as directed.*\\d.*") & str_detect(dosage, titrating_words, negate = TRUE) & str_detect(dosage, one_a_day_words, negate = TRUE) & str_detect(dosage, mg_doses, negate = TRUE) &str_detect(dosage, dose_only_words, negate = TRUE)~ as.numeric(str_match(dosage, "(\\d+)[\\.\\d+]*")[,1]),
+ 
+  str_detect(dosage, "^take 2.5mls (10mg) once daily for 1 week then stop") ~ as.numeric(2.5),
+   str_detect(dosage, "^1-2mls at night$")~ 1.5,
+  str_detect(dosage, "^0.5mls at night$") ~ 0.5,
+  str_detect(dosage, "^2.5 to 5ml at night$") ~ 3.75,
+  str_detect(dosage, "^2 5ml spoonfuls to be taken each day$")~ 10,
+  str_detect(dosage, "^45mg \\(3ml\\) at night$") ~ 3,
+  str_detect(dosage, "^1-2mls at night$") ~ 1.5,
+  str_detect(dosage, "^twice daily 2.5 ml$")~ 5,
+  str_detect(dosage, "^take 2-4 mls at night$")~3,
+ str_detect(dosage, "^2.5mls bd$")~5,
+  str_detect(dosage, "ambiguous") ~ NA_real_,
+  TRUE ~ 10000000)) %>% mutate(strength_mg_per_ml = as.numeric(str_match(PIItemStrengthUOM_perml, "(\\d+) MG/ML")[,2])) %>% 
+  mutate(dosage_mg_per_day = dosage_ml_per_day * strength_mg_per_ml, dosage_mg_total = PaidQuantity*strength_mg_per_ml)
+
+
+missed_liqs <- antidep_other_liqs %>% filter(dosage_ml_per_day
+                                             == 10000000)
+
+print(paste0('There are ', nrow(missed_liqs), ' prescriptions missed due to titrating prescription instructions'))
+
+
+antidep_other_liqs_parsed <- antidep_other_liqs %>% filter(dosage_ml_per_day != 10000000)
+
+```
+
+```{r Recombining_parsed_liquid_and_tablet_prescriptions, echo=FALSE}
+
+###################################################
+          ##### recombining #####
+###################################################
+
+### rbind all the liquid dataframes back together ###
+
+antidep_liquids_parsed <- bind_rows(antidep_drops_parsed , antidep_other_liqs_parsed)
+
+## bind the liquid and the tablet ssri's back together ##
+
+antidep_all_parsed <- bind_rows(antidep_liquids_parsed , antidep_tabs_parsed)
+
+### parsed data numbers ### 
+nrow(antidep_all_parsed)
+antidep_all_parsed %>% pull(substitutionID) %>% unique() %>% length()
+table(antidep_all_parsed$PIDrugFormulation)
+
+
+```
+
+
+### Dosages
+
+```{r dosages}
+# Get the type of antidepressant for each prescription
+
+antidep_all_parsed <- antidep_all_parsed%>% rowwise() %>% mutate(antidep_type = antidepressant_type(PIApprovedName)) %>% as.data.frame()
+
+write.table(antidep_all_parsed, 'edavyson/antidep_parsed_prescriptions.tsv', sep = '\t', quote = F, row.names= F)
+
+# antidepressant prescriptions supplementary table (following parsing)
+
+antidep_info_postparsing <- get_antidep_info(antidep_all_parsed)
+
+
+### parsing the dosage ###
+## converting the ESCITALOPRAM dosage scales to CITALOPRAM scales ##
+# if the drug name is CITALOPRAM, then the strength is 2x the strength, if not, then the strength is the same 
+
+# accounting for when the dosage includes decimals (37.5 MG like VENFLAXINE)
+
+color_type_dict <- c("SSRIs" =  "#CDA25C", "MAOs" = "#82B5C4", "TCAs"= "#C37E90", "Other" = "#A9BC7E")
+# edited from the function above to have the drugs which are actually present in the parsed dataset 
+antidep_all_parsed$dosage_mg_per_day <- round(antidep_all_parsed$dosage_mg_per_day, 2)
+drug_antidep_type_pres <- list(".*AMITRIPTYLINE.*|.*CLOMIPRAMINE.*|.*DOSULEPIN.*|.*DOXEPIN.*|.*IMIPRAMINE.*|.*LOFEPRAMINE.*|.*MIANSERIN.*|.*NORTRIPTYLINE.*|.*TRAZODONE.*|.*TRIMIPRAMINE.*" = "TCAs", 
+                          ".*MOCLOBEMIDE.*|.*PHENELZINE.*|.*TRANYLCYPROMINE.*" = "MAOs", 
+                          ".*CITALOPRAM.*|.*DULOXETINE.*|.*ESCITALOPRAM.*|.*FLUOXETINE.*|.*FLUVOXAMINE.*|.*PAROXETINE.*|.*SERTRALINE.*" = "SSRIs", 
+                          ".*AGOMELATINE.*|.*MIRTAZAPINE.*|.*REBOXETINE.*|.*TRYPTOPHAN.*|.*VENLAFAXINE.*" = "Other")
+ 
+dosage_type <- function(drugtype, dataset) {
+  drug_type_df <- dataset %>% filter(antidep_type == drugtype)
+  drug_names_regex <- names(which(unlist(lapply(drug_antidep_type_pres, function(x) any(grepl(drugtype, x)))), arr.ind=TRUE))
+  drug_names_regex <- gsub("[.*]", "", drug_names_regex) %>% gsub("[|]", ",", .) %>% strsplit(., ',') %>% unlist()
+  dosage_plots <- list()
+  for (i in 1:length(drug_names_regex)){
+    drug_match <- drug_names_regex[i]
+    drugs_df <- drug_type_df[grepl(drug_match, drug_type_df$PIApprovedName),]
+    dosage_plots[[i]] <- ggplot(drugs_df, aes(y = as.factor(dosage_mg_per_day), fill = color_type_dict[[drugtype]]))+
+      geom_bar(stat = 'count', position = 'dodge', fill = color_type_dict[[drugtype]]) + 
+      stat_count(geom="text", colour = 'black', size = 3.5, aes(label=..count..), position = position_dodge(width = 0.9),vjust = -0.25) +
+      labs(x = 'Count', y = 'Dosage (mg per day)', title = drug_match) +
+      coord_flip()+
+      theme_minimal() +
+      theme(legend.position = 'none', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12)) + scale_x_continuous(labels = function(x) round(x, 1))
+  }
+  return(dosage_plots)
+}
+
+SSRI_plots <- dosage_type('SSRIs', antidep_all_parsed)
+MAO_plots <- dosage_type('MAOs', antidep_all_parsed) # ISOCARBOXAZID absent from parsed data 
+TCA_plots <- dosage_type('TCAs', antidep_all_parsed) # AMOXAPINE and MAPROTILINE absent from parsed data 
+Other_plots <- dosage_type('Other', antidep_all_parsed) # DULOXETINE, NEFAZODONE, OXITRIPTAN, VORTIOXETINE absent from the parsed data 
+
+# looking at the them all
+ggarrange(plotlist= SSRI_plots, ncol = 2, nrow = 5)
+ggarrange(plotlist= MAO_plots, ncol = 2, nrow = 2)
+ggarrange(plotlist= TCA_plots, ncol = 2, nrow = 6)
+ggarrange(plotlist= Other_plots, ncol = 2, nrow = 3)
+
+
+# organising them into subplots of 4 and saving into 6 figures for supp info 
+
+first_dosages_plt <- ggarrange(SSRI_plots[[1]], SSRI_plots[[2]], SSRI_plots[[3]], SSRI_plots[[4]],nrow =2, ncol = 2)
+
+second_dosages_plt <- ggarrange(SSRI_plots[[6]], SSRI_plots[[7]], TCA_plots[[1]], TCA_plots[[2]], ncol = 2, nrow = 2)
+
+third_dosages_plt <- ggarrange(TCA_plots[[3]], TCA_plots[[4]], TCA_plots[[5]], TCA_plots[[6]], ncol = 2, nrow = 2)
+
+fourth_dosages_plt <- ggarrange(TCA_plots[[7]], TCA_plots[[8]], TCA_plots[[9]], TCA_plots[[10]], ncol = 2, nrow = 2)
+
+fifth_dosages_plt <- ggarrange(Other_plots[[1]], Other_plots[[2]], Other_plots[[3]], Other_plots[[4]], ncol = 2, nrow = 2)
+
+sixth_dosages_plt <- ggarrange(Other_plots[[5]], MAO_plots[[1]], MAO_plots[[2]], MAO_plots[[3]], nrow = 2, ncol = 2)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/dosages_1_SSRIs.png', plot =first_dosages_plt, width = 8, height = 8, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/dosages_2_SSRI_TCA.png', plot =second_dosages_plt, width = 8, height = 8, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/dosages_3_TCA.png', plot =third_dosages_plt, width = 8, height = 8, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/dosages_TCA.png', plot =fourth_dosages_plt, width = 8, height = 8, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/dosages_Other.png', plot =fifth_dosages_plt, width = 8, height = 8, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/dosages_Other_MAOs.png', plot =sixth_dosages_plt, width = 8, height = 8, device='png', dpi=300)
+
+```
+
+### Episodes
+
+```{r episode_functions, echo = FALSE, include = FALSE}
+
+####### Prescription episodes using the prescription instructions (1/2 tablets a day) and paid quantity to establish how long before another prescription would be required ######
+### set something up which can be rerun many times easily ### 
+
+# functions for establishing what episode a prescription is in 
+
+get_episodes <- function(dataset, end_date_variable='prescription_end_date_extend') {
+  ## for loop step by step ##
+
+# establish the the ID of the person 
+# filtering to be just one persons prescriptions
+# order the prescriptions in terms of their dispense date
+# set the reference date to NA
+# set the Group variable to be 0 for all prescriptions at the beginning 
+# loop through the prescriptions 
+# identify the Dispense date and the predicted end date of the current prescription
+
+## if it is the first prescription : 
+# the start date will be NA for the first prescription, if statement to say if the ref_date == NA then the Group is 1 (first prescription)
+# update the new reference date to be the end date of that prescription
+
+## if it is not the first prescription: 
+# test whether the dispense date of the prescription is before or the same day as the ref date (now set to the end date of the previous prescription)
+# i.e is the dispensing of the new prescription within the time period of the old one (add a leeway of a few days?)
+#update the ref date to be the end date of the prescription for the next iteration
+
+## if the dispense date is before the end date of the previous, set the Group to be the same as the previous 
+# if not, set the Group to be +1 the previous Group date (new episode)
+#update the ref date to be the end date of the prescription for the next iteration
+
+coded_ep_tabs <- list() #empty list for saving the data frames which have been sorted 
+## for loop step by step ##
+for (i in 1:length(unique(dataset$substitutionID))){
+  ID <- unique(dataset$substitutionID)[i]
+  ID_prescriptions <- dataset %>% filter(substitutionID == ID) 
+  ID_prescriptions<-ID_prescriptions[order(ID_prescriptions$DispDate),] 
+  ref_date <- NA 
+  ID_prescriptions$Group <- 0 
+  for (j in 1:nrow(ID_prescriptions)) { 
+    disp_date <- ID_prescriptions[j, 'DispDate'] 
+    end_date <- ID_prescriptions[j, end_date_variable] 
+    if (is.na(ref_date)) { 
+      ID_prescriptions[j, 'Group'] <- 1
+      ref_date <- end_date 
+    } else {
+      before_end_prev_episode <- disp_date <= ref_date 
+      if (before_end_prev_episode ==TRUE){
+        ID_prescriptions[j, 'Group'] <- ID_prescriptions[j-1, 'Group']
+        ref_date <- end_date 
+      } else {
+        ID_prescriptions[j, 'Group'] <- (ID_prescriptions[j-1, 'Group']) + 1 
+        ref_date <- end_date 
+      }
+    }
+  }
+  
+  coded_ep_tabs[[i]] <- ID_prescriptions #saving the ordered and coded prescriptions per person as a dataframe in a list of dataframes (which will be merged)
+}
+coded_ep_tabs_df <- do.call("bind_rows",coded_ep_tabs)
+coded_ep_tabs_df$indiv_group_id <- paste0(coded_ep_tabs_df$substitutionID, ':', coded_ep_tabs_df$Group)
+return(coded_ep_tabs_df)
+}
+
+#function to pull out episode lengths for all the episodes 
+
+get_episode_info <- function(dataset_group_indi_ID, end_date_var= 'prescription_end_date_extend') {
+  #finding the start date of prescription episodes per person
+#Group by the ID and prescription episode identifiers, so therefore each episode is grouped and the minimum dispensation date is selected 
+print('Getting the start date of episodes ')
+start <- dataset_group_indi_ID %>%
+  group_by(indiv_group_id) %>%
+  filter(DispDate == min(DispDate)) %>%
+  slice(1) %>%
+  ungroup()
+
+#just selecting the ID, groupID and Dispensation date for the minimum
+start2 <- start[,c("substitutionID","Group", "indiv_group_id","DispDate")]
+start2 <- start2 %>%
+  rename(ep_start = DispDate)
+print('Getting the end date of episodes')
+#end of dispense episode selected in the same way as the beginning
+
+end <- dataset_group_indi_ID %>%
+  group_by(indiv_group_id) %>%
+  slice(n()) %>%
+  ungroup()
+
+
+#just selecting the relevant columns 
+end2 <- end[,c("substitutionID","Group", "indiv_group_id","DispDate", "prescription_end_date", "prescription_end_date_extend")]
+end2 <- end2 %>%
+  rename(ep_end = end_date_var)
+
+length <- merge(start2, end2, by = c("substitutionID", "indiv_group_id", "Group"))
+
+#calculate the length of an episode by the interval between the start and the end date of the episode
+length <- length %>% mutate(ep_length = days(ep_end-ep_start))
+length$dt_episode <- interval(start= length$ep_start, end = length$ep_end)
+
+return(length)
+}
+
+#function to count how many episodes there are per person in the dataset , the average length of an episode and the min and max duration of an episode 
+
+num_eps_pp <- function (dataset_grouped, length_dataset){
+  num_eps_df <- data.frame(substitutionID = unique(dataset_grouped$substitutionID), num_episodes = NA)
+for (i in 1:length(unique(dataset_grouped$substitutionID))) {
+  ID <- unique(dataset_grouped$substitutionID)[i]
+  indiv_presc <- dataset_grouped %>% filter(substitutionID == ID)
+  num_eps <- length(unique(indiv_presc$Group))
+  num_eps_df[i, 'num_episodes'] <- num_eps 
+  indiv_prescrip_episodes <- length_dataset %>% filter(substitutionID == ID)
+  average_length_ep <- mean(as.duration(indiv_prescrip_episodes$dt_episode)/ddays(1))
+  min_length_ep <- min(as.duration(indiv_prescrip_episodes$dt_episode)/ddays(1))
+  max_length_ep <- max(as.duration(indiv_prescrip_episodes$dt_episode)/ddays(1))
+  num_eps_df[i, 'avg_length_days'] <- average_length_ep
+  num_eps_df[i, 'min_length_days'] <- min_length_ep
+  num_eps_df[i, 'max_length_days'] <- max_length_ep
+}
+  return(num_eps_df)
+}
+
+# Function for merging episodes together if they are less than a set number of days apart
+# Did not implement 
+
+rehashing_episodes <- function(dataset, num_days) {
+  #order by the substitutionID and then order by Dispense date within substitutionID
+  print('Ordering the dataset')
+  ord_dataset <- dataset[order(dataset$substitutionID, dataset$Group),]
+  #set parameters 
+  print('Setting the parameters')
+  JID = ord_dataset$substitutionID[1] #the ID of a person 
+  START_DT = ord_dataset$ep_start[1]
+  END_DT = ord_dataset$ep_end[1] # get the episode end date
+  CNT <- 1 # count value for episodes
+  KID <- 1 # count value for individuals
+  KDT <- 1 # count value for episode end dates 
+  ord_dataset$KID <- 1 #setting these to be a variable of 1's in the episode_length data
+  ord_dataset$KDT <- 1 #setting these to be a variable of 1's in the episode_length data
+  ord_dataset$CNT[1] <- 1 #the COUNT variable for the episodes
+  print('Beginning the loop')
+  for (i in 2:length(ord_dataset$substitutionID)) {
+  JID_N <- ord_dataset$substitutionID[i] #going through each prescription entry (from the second entry to the last) in the database and extracting the ID and the DispDate
+  START_DT_N <- ord_dataset$ep_start[i]
+  END_DT_N <- ord_dataset$ep_end[i]
+  if (JID_N == JID) { #if the episode is for the same person as the previous episode
+    if (as.numeric(START_DT_N - END_DT) <= num_days) { # if so, then determine whether the new episode is within 7 days of the last prescription
+        CNT <- CNT + 1 #if the episode start date is within 7 days of the previous episode end date, then set the count to increase
+        END_DT <- END_DT_N
+        START_DT <- START_DT_N
+      }
+      else {
+      CNT <- 1 #if the episode if NOT within 7 days, set count to 1
+      KDT <- KDT + 1 #increase the count of the date variable 
+      END_DT <- END_DT_N #set the new end date to be the new end DT date in which we will check the following episode against
+      START_DT <- START_DT_N
+      }
+    } else {
+        KID <- KID + 1 #if the person is NOT the same, increase the count of the IDs by 1 
+        CNT <- 1 #set the count variable to be 1 
+        KDT <- 1 #set the count date variable to be 1 
+        END_DT <- END_DT_N #set the new date to be the new reference DT date in which we will check the following prescription against 
+        START_DT <- START_DT_N
+        JID <- JID_N
+    }
+  #fill in these values into the SSRI_tabs dataframe 
+  ord_dataset$CNT[i] <- CNT 
+  ord_dataset$KID[i] <- KID 
+  ord_dataset$KDT[i] <- KDT
+  }
+  print('End of loop!')
+
+#create a unique identifier for a prescription which is a combination of the ID, the number of prescriptions and whether this prescription is within 5 days of a previous one 
+print('Creating the UID')
+ord_dataset <- ord_dataset %>% mutate(episode_ID = (KID*100000) + (KDT*100))
+
+return(ord_dataset)
+}
+
+## make a function for swapping the cases and controls depending on how long it has been into an episode/since an episode 
+
+case_cont_swap <- function(episode_data, appt_col, start_var, end_var) {
+  orig_cases <- episode_data[episode_data[,appt_col] == TRUE,]
+  controls <- episode_data[which(!episode_data$substitutionID %in% orig_cases$substitutionID),]
+  controls_prior <- controls %>% group_by(substitutionID) %>% mutate(end_appt_dur = days(appt-.data[[end_var]])$day) %>% filter(end_appt_dur > 0) %>% filter(end_appt_dur == min(end_appt_dur)) %>% as.data.frame()
+  potential_cases <- controls_prior %>% filter(end_appt_dur < 7)
+  potential_controls <- orig_cases %>% mutate(time2appt = days(appt-.data[[start_var]])$day) %>% filter(time2appt < 7)
+  cases_edited <- orig_cases %>% mutate(time2appt = days(appt-.data[[start_var]])$day) %>%  filter(time2appt >= 7)
+  cases_edited <- bind_rows(cases_edited, potential_cases)
+  return(list(cases_edited,potential_cases, potential_controls))
+}
+
+
+num_cases <- function(dataset, percent_leeway, form= 'ALL', paidquantname, end_date_var = 'prescription_end_date_extend', merge_ep = FALSE, merge_ep_day = 7){
+  if (form == 'TABS'){
+  dataset <- dataset %>% mutate(prescription_end_date= DispDate + days(round(.data[[paidquantname]]/tabs_per_day, digits = 0)))
+  dataset <- dataset %>% mutate(prescription_end_date_extend = prescription_end_date + round(percent_leeway*(days(prescription_end_date-DispDate))$day, digits = 0))
+  }else {
+    dataset$dosage_ml_per_day <- as.numeric(dataset$dosage_ml_per_day) 
+    dataset$tabs_per_day <- as.numeric(dataset$tabs_per_day)
+    dataset<- dataset %>% mutate(prescription_end_date = case_when(
+   PIDrugFormulation == 'TABS' | PIDrugFormulation == 'CAPS' ~
+    (DispDate + days(round(.data[[paidquantname]]/tabs_per_day, digits = 0))$day),
+   PIDrugFormulation == 'LIQ' | PIDrugFormulation == 'SOLN' | PIDrugFormulation == 'DROPS' ~
+     (DispDate +days(round(.data[[paidquantname]]/dosage_ml_per_day, digits = 0))$day)))
+    dataset <- dataset %>% mutate(prescription_end_date_extend = case_when(PIDrugFormulation == 'TABS' | PIDrugFormulation == 'CAPS' ~ prescription_end_date + round(percent_leeway*(days(prescription_end_date-DispDate))$day, digits = 0),
+   PIDrugFormulation == 'LIQ' | PIDrugFormulation == 'SOLN' | PIDrugFormulation == 'DROPS' ~ prescription_end_date + round(percent_leeway*(days(prescription_end_date-DispDate))$day, digits = 0)))
+  }
+  episodes <- get_episodes(dataset, end_date_variable=end_date_var)
+  length <- get_episode_info(episodes, end_date_var = end_date_var)
+  ep_info <- num_eps_pp(episodes, length)
+  episodes_ap <- merge(episodes, appt_id, by = 'substitutionID')
+  length_ap <- merge(length, appt_id, by = 'substitutionID')
+  length_ap <-length_ap %>% mutate(appt_inep = lubridate::`%within%`(appt, dt_episode))
+  length_ap <- merge(length_ap, oii_file, by.x = 'id', by.y = 'IID')
+  length_ap$time2appt <- days(length_ap$appt-length_ap$ep_start)$day
+  length_ap$interval_end_appt <- days(length_ap$appt- length_ap$ep_end)$day
+  cases <- length_ap %>% filter(appt_inep == TRUE)
+  num_cases <- dim(cases)[1]
+  #editing the phenotype - those who are just at the beginning of a treatment episode will become controls 
+  #and those who have just finished a treatment episode will become cases 
+  swap_cases_lst <- case_cont_swap(length_ap, 'appt_inep', start_var = 'ep_start', end_var = 'ep_end')
+  fun_cases_edit <- swap_cases_lst[[1]]
+  num_cases_swap <- dim(fun_cases_edit)[1]
+  if (merge_ep == TRUE) {
+    print(paste0('Merging episodes which are less than ', merge_ep_day, ' days apart'))
+    #calculate inter episode interval 
+    length_inter <- length_ap %>% group_by(substitutionID) %>% arrange(ep_start) %>% mutate(inter_episode = as.numeric(ep_start - lag(ep_end))) %>% as.data.frame()
+      #merging episodes which are less than 7 days apart
+    #giving episodes which are less than 7 days apart the same identifier 
+    length_rehash <- rehashing_episodes(length_inter, merge_ep_day)
+    #grouping on the identifier (made through the rehashing episodes function) and then create new episode start and end columns for the merged episodes 
+    length_merge <- length_rehash %>% group_by(episode_ID) %>% mutate(episode_start = min(ep_start), episode_end = max(ep_end)) %>% distinct(KDT, .keep_all = T) %>% ungroup() %>% group_by(substitutionID) %>% arrange(episode_start) %>% mutate(inter_episode_mrg = episode_start - lag(episode_end)) %>% as.data.frame()
+    
+    length_merge$dt_episode_merged <- interval(start =length_merge$episode_start, end= length_merge$episode_end)
+    length_merge  <- length_merge %>% mutate(appt_inmergedep = lubridate::`%within%`(appt, dt_episode))
+    mrgd_ep_cases <- length_merge %>% filter(appt_inmergedep == TRUE)
+    #swap controls and cases 
+    length_merge_swap <- case_cont_swap(length_merge, 'appt_inmergedep', 'episode_start', 'episode_end')
+    mrgd_ep_cases_swp <- length_merge_swap[[1]]
+    return(list(num_cases, num_cases_swap, episodes_ap, length_ap, ep_info, cases, fun_cases_edit, dataset, mrgd_ep_cases, mrgd_ep_cases_swp, length_merge))
+  } else {
+    print('Not merging any episodes based off the episode interval')
+  return(list(num_cases, num_cases_swap, episodes_ap, length_ap, ep_info, cases, fun_cases_edit, dataset))
+  }
+}
+
+
+## how does the number of cases change when going from 0 leeway added to 10% leeway added and visualise the prescriptions and the episodes 
+
+prescrip_dumbell_plot <- function(dataset, end_date) {
+plot <- dataset %>% 
+   ggplot(aes(x = DispDate, xend = .data[[end_date]], y = substitutionID, colour = as.factor(max_count))) +
+  geom_dumbbell( size = 1, alpha = 0.3) + geom_point(aes(x = appt, y = substitutionID), colour = 'black', shape = 13) + scale_x_date(limits = as.Date(c('2009-01-01', '2012-01-01'))) + scale_colour_got(discrete = TRUE, 'Number of prescriptions with the same Dispense Date', labels = c(1,2,3,4), option = 'Margaery') + theme_minimal() + 
+    geom_point(aes(x = appt, y = substitutionID), colour = 'black', shape = 13) +
+    theme(legend.position = 'none', axis.ticks.y = element_blank(), axis.text.y = element_blank())+ scale_x_date(limits = as.Date(c(min(dataset$DispDate), '2011-06-01'))) +theme(legend.position = 'top', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))
+    labs(x = 'Time', y = 'ID')
+ return(plot)
+}
+
+episode_dumbell_plot_subset <- function(dataset, start_var = 'ep_start', end_var = 'ep_end', color_var = 'appt_inep', legend_position = 'none') {
+  min_date = as.Date(min(dataset[[start_var]])-30)
+  max_date = as.Date('2014-01-01')
+  print(min_date)
+  print(max_date)
+  
+plot <- dataset %>% 
+   ggplot(aes(x = .data[[start_var]], xend = .data[[end_var]], y = substitutionID, color = as.factor(.data[[color_var]]))) +
+  geom_dumbbell( size = 0.5) + 
+    geom_point(aes(x = appt, y = substitutionID), colour = 'black', shape = 13) +
+    theme(legend.position = legend_position, axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.text.x = element_text(angle = 90, hjust = 1))+scale_x_date(limits = c(min_date, max_date))+
+    labs(x = 'Time', y = 'ID')
+ return(plot)
+}
+
+
+#episode dumbell plot for visualising 
+
+episode_dumbell_plot <- function(dataset, xlim_date='2012-01-01') {
+plot <- dataset %>% 
+   ggplot(aes(x = ep_start, xend = ep_end, y = substitutionID, color = as.factor(appt_inep))) +
+  geom_dumbbell( size = 0.5) + 
+    geom_point(aes(x = appt, y = substitutionID), colour = 'black', shape = 13) + scale_x_date(limits = as.Date(c(min(dataset$ep_start), xlim_date))) + scale_color_manual(values = c("TRUE" = "#56B4E9", "FALSE" = '#E69F00'))+
+    labs(x = 'Time', y = 'ID')
+ return(plot)
+}
+
+# Function to sort through multiple prescriptions in < set timeframe for the same perion
+#####   LOOP to group together prescriptions for the same person which were given in the same time frame ##### 
+# order the data table by substitution ID and within that DispDate
+
+get_UIDs <- function(dataset) {
+  #order by the substitutionID and then order by Dispense date within substitutionID
+  print('Ordering the dataset')
+  ord_dataset <- dataset[order(dataset$substitutionID, dataset$DispDate),]
+  #set parameters 
+  print('Setting the parameters')
+  JID = ord_dataset$substitutionID[1] #the ID of a person 
+  DT = ord_dataset$DispDate[1] # Disp Date of the prescription
+  CNT <- 1 # count value for prescriptions
+  KID <- 1 # count value for individuals
+  KDT <- 1 # count value for Dispense Dates 
+  ord_dataset$KID <- 1 #setting these to be a variable of 1's in the prescription data 
+  ord_dataset$KDT <- 1 #setting these to be a variable of 1's in the prescription data 
+  ord_dataset$CNT[1] <- 1 #the COUNT variable for the prescriptions 
+  print('Beginning the loop')
+  for (i in 2:length(ord_dataset$substitutionID)) {
+  JID_N <- ord_dataset$substitutionID[i] #going through each prescription entry (from the second entry to the last) in the database and extracting the ID and the DispDate
+  DT_N <- ord_dataset$DispDate[i]
+  if (JID_N == JID) { #if the new prescription is for the same person as the previous prescription 
+    if (DT_N == DT) { # if so, then determine whether the new prescription is within 5 days of the last prescription
+        CNT <- CNT + 1 #if the prescription is within 5 days, increase the count by 1 
+      }
+      else {
+      CNT <- 1 #if the prescription if NOT within 5 days, set count to 1
+      KDT <- KDT + 1 #increase the count of the dispense date variable 
+      DT <- DT_N #set the new date to be the new reference DT date in which we will check the following prescription against 
+      }
+    } else {
+        KID <- KID + 1 #if the person is NOT the same, increase the count of the IDs by 1 
+        CNT <- 1 #set the count variable to be 1 
+        KDT <- 1 #set the count date variable to be 1 
+        DT <- DT_N #set the new date to be the new reference DT date in which we will check the following prescription against 
+        JID <- JID_N
+    }
+  #fill in these values into the dataframe 
+  ord_dataset$CNT[i] <- CNT 
+  ord_dataset$KID[i] <- KID 
+  ord_dataset$KDT[i] <- KDT
+  }
+  print('End of loop!')
+#create a unique identifier for a prescription which is a combination of the ID, the number of prescriptions and whether this prescription is within 5 days of a previous one 
+print('Creating the UID')
+ord_dataset <- ord_dataset %>% mutate(UID = (KID*100000) + (KDT*100))
+
+#group by the unique identifier to group prescriptions which are within 5 days of each other for each person and then establish how many prescriptions there are 
+print('Calculating the maximum count')
+ord_max <- ord_dataset %>% group_by(UID) %>% summarise(max_count = n())
+ord_max = data.frame(ord_max)
+ord_dataset$max_count <- ord_max[match(ord_dataset$UID, ord_max$UID) ,"max_count"]
+
+#return the dataset with UID showing whether there are repeated prescriptions for the same person on the same day
+return(ord_dataset)
+}
+
+
+
+```
+
+### Multiple prescriptions in one day
+
+Getting Episodes after + 10% prescription duration onto prescription time, and accounting for multiple prescriptions on the same day.
+
+```{r multiple_prescriptions_same_day}
+
+antidep_all_parsed <- antidep_all_parsed %>% mutate(prescription_end_date= DispDate + (round(PaidQuantity/tabs_per_day, digits = 0)))
+antidep_all_parsed <- antidep_all_parsed %>% mutate(prescription_end_date_extend = prescription_end_date + round(0.1*days(prescription_end_date-DispDate)$day), digits = 0)
+
+antidep_UIDs_all <- get_UIDs(antidep_all_parsed)
+
+
+# distribution of people getting 1,2,... tablets a day
+
+table(antidep_UIDs_all$max_count)
+
+# establish whether "stockpiling" or "simultaneous treatment" 
+# list of the maximum doses from the BNF website
+#https://bnf.nice.org.uk/drugs/amitriptyline-hydrochloride/#indications-and-dose
+#https://bnf.nice.org.uk/drugs/clomipramine-hydrochloride/
+# N.B Escitalopram is max 20MG but has been converted to citalopram scale (x2) so here is 40MG
+
+maximum_doses <- maximum_doses <- list("^AMITRIPTYLINE$" = 150, "^CLOMIPRAMINE HYDROCHLORIDE$" = 250, "^DOSULEPIN HYDROCHLORIDE$" = 225, "^DOXEPIN$"= 300,  "^IMIPRAMINE HYDROCHLORIDE$"= 200, "^LOFEPRAMINE$" = 210, "^MIANSERIN HYDROCHLORIDE$" = 90 ,"^NORTRIPTYLINE$" = 150, "^TRAZODONE HYDROCHLORIDE$" = 600, "^TRIMIPRAMINE$" = 300, 
+                      "^MOCLOBEMIDE$" = 600, "^PHENELZINE$" = 90, "^TRANYLCYPROMINE$" = 30, 
+                      "^CITALOPRAM$" = 40,"^DULOXETINE$" = 60, "^ESCITALOPRAM$" = 40, "^FLUOXETINE$"=60, "^FLUVOXAMINE MALEATE$" = 300, "^PAROXETINE$" = 50, "^SERTRALINE$" = 200, 
+                      "^AGOMELATINE$"=50, "^FLUPENTIXOL$"= 3, "^MIRTAZAPINE$" = 45, "^REBOXETINE$"= 12, "^TRYPTOPHAN$" = 6,  "^VENLAFAXINE$" = 375)
+
+# extract the maximum dosage from the drug name
+get_max_dosage <- function(med_name) {
+  regex <- names(maximum_doses)[str_detect(med_name, names(maximum_doses))]
+  max_dosage <- maximum_doses[[regex]]
+  return(max_dosage)
+}
+
+# create a maximum dosage column in the table
+
+antidep_UIDs_all <-antidep_UIDs_all %>% rowwise() %>% mutate(max_dosage = get_max_dosage(PIApprovedName)) %>% as.data.frame()
+
+## get the numbers of how many prescriptions there are which occur on the same day
+#
+print(paste0('The number of prescription identifiers which are repeated (i.e there is more than one prescription per person per day): ', sum(table(table(antidep_UIDs_all$UID))[-1])))
+
+print(paste0('The number of prescriptions for the same person on the same day:', antidep_UIDs_all%>% filter(max_count > 1) %>% nrow()))
+
+print(paste0('The number of individuals who have more than one prescription on the same day:', antidep_UIDs_all %>% filter(max_count > 1) %>% pull(substitutionID) %>% unique() %>% length()))
+# incorporating the maximum dosage to make a decision whether multiple prescriptions are put together (stockpiling), or treated as separate (simultaneous treatment)
+# and merging together if so
+
+stockpiling_info <- function(datasetUID) {
+  
+  datasetUID <- datasetUID %>%
+  group_by(UID) %>% mutate(dose_sum = sum(dosage_mg_per_day)) %>%
+  mutate(decision = case_when(
+    n_distinct(PIApprovedName) == 1 & n_distinct(dosage_mg_per_day) == 1 ~ 'same med same dosage',
+    n_distinct(PIApprovedName) == 1 & n_distinct(dosage_mg_per_day) != 1 & dose_sum > max_dosage ~ 'same med, diff dosage: total over max',
+    n_distinct(PIApprovedName) == 1 & n_distinct(dosage_mg_per_day) != 1 & dose_sum <= max_dosage ~ 'same med, diff dosage: total under max',
+    n_distinct(PIApprovedName) != 1 ~ 'different meds', 
+    TRUE ~ 'no fit'
+  )) %>% 
+  mutate(decision.2 = case_when(
+    decision == 'same med same dosage' | decision == 'same med, diff dosage: total over max' ~ 'stockpile treatment', 
+    decision == 'same med, diff dosage: total under max' | decision == 'different meds' ~ 'simulataneous treatment'
+  )) %>% 
+  group_by(UID)  %>% 
+  mutate(NewPaidQuantity = case_when(
+    decision.2 == 'simulataneous treatment'~ PaidQuantity, 
+    decision.2 == 'stockpile treatment' & CNT != max(CNT) ~ PaidQuantity, 
+    decision.2 == 'stockpile treatment' & CNT == max(CNT) ~ sum(PaidQuantity)
+  )) %>% 
+  as.data.frame() 
+  
+  return(datasetUID)
+}
+
+antidep_all_stckpile <- stockpiling_info(antidep_UIDs_all)
+
+table(antidep_all_stckpile %>% filter(max_count > 1) %>% pull(decision))
+table(antidep_all_stckpile %>% filter(max_count > 1) %>% pull(decision.2))
+
+# make a graph of the numbers with multiple prescriptions a day 
+
+mult_presc <- antidep_all_stckpile %>%
+  group_by(max_count) %>%
+  dplyr::summarize(total = n(), 
+                   simultaneous_decision = sum(decision.2 == 'simulataneous treatment', na.rm = T), 
+                   stockpile_decision = sum(decision.2 == 'stockpile treatment', na.rm = T), 
+                   )
+
+mult_presc_summary <- mult_presc %>% filter(max_count > 1) %>% as.data.frame()
+mult_presc_summary <- mult_presc_summary %>% pivot_longer(cols = ends_with('decision')|'total', 
+                                                  names_to = "decision", 
+                                                  values_to = "number")
+
+mult_presc_summary$decision <- factor(mult_presc_summary$decision, levels = c('total', 'simultaneous_decision', 'stockpile_decision'))
+
+mult_pres_plt <- ggplot(mult_presc_summary, aes(x = max_count, y = number, fill = decision)) + geom_bar(stat = 'identity', position = 'dodge') + labs(x = 'Number of prescriptions given on the same day to the same individual', y = 'Number of instances') + theme_minimal() + scale_fill_got_d(option = 'Daenerys', labels = c('Total', 'Simultaneous Treatment', 'Advance pick up'), name = 'Decision made')
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/multi_AD_presc_decision.png', plot = mult_pres_plt, width = 8, height = 6, device='png', dpi=300)
+```
+
+```{r deriving_episodes}
+
+# using the num_cases function to extract episodes, establish cases etc 
+# when not merging episodes 
+# output == list(num_cases, num_cases_swap, episodes_ap, length_ap, ep_info, cases, fun_cases_edit, dataset))
+
+
+antidep_stck_10lee <- num_cases(antidep_all_stckpile, 0.1, 'ALL', 'NewPaidQuantity', merge_ep = FALSE) # 10% leeway, stockpiling accounted for
+
+```
+
+### AD phenotypes
+
+```{r extracting_phenotype_ALL_ANTIDEPRESSANTS}
+# antidepressant phenotype 1 
+
+# cases
+# get the episodes for the cases 
+antidep_pheno1_cases <- antidep_stck_10lee[[7]]
+
+# make a new column for the phenotype setting the cases to 1 
+
+antidep_pheno1_cases <- antidep_pheno1_cases %>% select(c(id, substitutionID)) %>% mutate(antidep_pheno1 = 1)
+
+# merge with the oii file to get the FID and IID 
+
+antidep_pheno1_cases <- merge(antidep_pheno1_cases, oii_file[,c('IID', 'FID')], by.x = 'id', by.y = 'IID') 
+
+# selecting just IID, FID and antidep_pheno1 columns
+antidep_pheno1_cases <- antidep_pheno1_cases %>% select(c(FID, id, antidep_pheno1))
+colnames(antidep_pheno1_cases)[2] <- 'IID'
+
+# removing duplicated entries (1)
+
+antidep_pheno1_cases <- antidep_pheno1_cases %>% distinct() 
+# controls 
+
+antidep_pheno1_control <- appt_id %>% anti_join(antideps)
+antidep_pheno1_control <- merge(antidep_pheno1_control, oii_file, by.x = 'id', by.y = 'IID')
+antidep_pheno1_control <- antidep_pheno1_control %>% mutate(antidep_pheno1 = 0)
+
+antidep_pheno1_control <- antidep_pheno1_control %>% select(c(FID, id, antidep_pheno1))
+colnames(antidep_pheno1_control)[2] <- 'IID'
+antidep_pheno1_control <- antidep_pheno1_control %>% distinct()
+
+
+# bind together 
+
+antidep_pheno1 <- rbind(antidep_pheno1_cases, antidep_pheno1_control)
+
+# remove those who have opted out (not in the BMI panel from the new release)
+
+gs_bmi_file <- read_csv('Data/GenScot/2023_release/bmi_general_phenos/body.gwasp.202302.csv') %>% as.data.frame()
+antidep_pheno1_mrg <- antidep_pheno1 %>% filter(IID %in% gs_bmi_file$id)
+print(paste0('Number of IDs lost for phenotype 1: ', nrow(antidep_pheno1) - nrow(antidep_pheno1_mrg))) # a control
+
+
+# antidepressant phenotype 2 (with MDD)
+# cases 
+scid_pheno <- read.table('Data/GenScot/genscot_depression_mergedFID.tsv', sep = '\t', header = T)
+antidep_pheno2_cases <- merge(antidep_pheno1_cases, scid_pheno, by = c('IID', 'FID'))
+antidep_pheno2_cases <-antidep_pheno2_cases %>% filter(scid == 1) %>% mutate(antidep_pheno2 = 1)
+
+# controls 
+
+antidep_pheno2_control <- merge(antidep_pheno1_control, scid_pheno %>% select(IID, FID, scid), by = c('IID', 'FID'))
+antidep_pheno2_control <-antidep_pheno2_control %>% filter(scid == 1) %>% mutate(antidep_pheno2 = 0)
+
+# bind together 
+
+antidep_pheno2 <- rbind(antidep_pheno2_control %>% select(FID, IID, antidep_pheno2), antidep_pheno2_cases %>% select(FID, IID, antidep_pheno2))
+colnames(antidep_pheno2)[2] <- 'IID'
+
+# remove those who have opted out (not in the BMI panel from the new release)
+antidep_pheno2_mrg <- antidep_pheno2 %>% filter(IID %in% gs_bmi_file$id)
+print(paste0('Number of IDs lost for phenotype 2: ', nrow(antidep_pheno2) - nrow(antidep_pheno2_mrg))) # a control
+
+### antidepressant phenotype 1 and 2 graphs ### 
+
+antidep_phenos <- data.frame(phenotype = c(1,2), Cases = c(nrow(antidep_pheno1_mrg %>% filter(antidep_pheno1 == 1)), nrow(antidep_pheno2_mrg %>% filter(antidep_pheno2 == 1))), Controls = c(nrow(antidep_pheno1_mrg %>% filter(antidep_pheno1 == 0)), nrow(antidep_pheno2_mrg %>% filter(antidep_pheno2 ==0))))
+
+antidep_phenos <- pivot_longer(antidep_phenos, cols = c("Cases", "Controls"), names_to = "group", values_to = "Count") %>% as.data.frame()
+
+presc_antidep_phenos <- ggplot(antidep_phenos, aes(x= as.factor(phenotype), y = Count, fill = group)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Pheno 1: \n Antidep Episode vs \nNo Antidep', ' Pheno 2: \n MDD cases only'))+ geom_text(aes(label = Count), vjust = -0.2, position = position_dodge(.9), size = 4)+scale_fill_discrete(name = '') + theme_minimal()+theme(axis.text.x=element_text(size=12))
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/AD_presc_phenotypes.png', plot = presc_antidep_phenos, width = 8, height = 6, device='png', dpi=300)
+
+```
+
+Visualise the episodes for cases and controls :
+
+```{r}
+### subset of the data to visualise cases and controls ###
+
+antidep_stck_10_length <- antidep_stck_10lee[[4]]
+write.table(antidep_stck_10lee[[4]], 'edavyson/antidep_episodes_10_leeway_stckpile.tsv', sep = '\t', row.names = F, quote = F)
+ 
+
+# get five random cases and controls 
+
+subset <- c(antidep_pheno1_mrg %>% filter(antidep_pheno1 == 1) %>% slice(1:10) %>% pull(IID))
+
+iddata <- iddata %>% as.data.frame()
+
+subset_subid <- iddata %>% filter(id %in% subset) %>% pull(substitutionID)
+
+episode_dumbell_plot(antidep_stck_10_length %>% filter(substitutionID %in% subset_subid), xlim_date = '2015-01-01') 
+
+
+
+```
+
+#### Cases Dumbell plots
+
+```{r}
+cases_1_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[1:200])))
+
+cases_2_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[201:400])))
+cases_3_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[401:600])))
+cases_4_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[601:nrow(antidep_pheno1_cases)])))
+ggarrange(cases_1_plt, cases_2_plt, cases_3_plt, cases_4_plt, nrow = 1, ncol = 4)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/AD_cases_all.png', plot = ggarrange(cases_1_plt, cases_2_plt, cases_3_plt, cases_4_plt, nrow = 1, ncol = 4), width = 7, height = 9, device='png', dpi=300)
+
+
+# if we were to split it up further (just 100 people in each subplot)
+
+cases_1_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[1:100])))
+
+cases_2_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[101:200])))
+cases_3_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[201:300])))
+cases_4_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[301:400])))
+cases_5_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[401:500])))
+cases_6_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[501:600])))
+cases_7_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[601:700])))
+cases_8_plt <- episode_dumbell_plot_subset((
+antidep_stck_10_length %>% filter(substitutionID %in% antidep_pheno1_cases$substitutionID[701:nrow(antidep_pheno1_cases)])))
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/presc_AD_cases_1.png', plot = ggarrange(cases_1_plt, cases_2_plt, cases_3_plt, cases_4_plt, nrow = 1, ncol = 4), width = 8, height = 6, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/presc_AD_cases_2.png', plot = ggarrange(cases_5_plt, cases_6_plt, cases_7_plt, cases_8_plt, nrow = 1, ncol = 4), width = 8, height = 6, device='png', dpi=300)
+
+
+
+
+
+
+```
+
+#### Control contamination  
+
+Removing the 'controls' of those individuals who have no prescriptions but because their appointment was before data linkage to prescriptions < 2009. 
+
+For the controls, are there some which just do not have a prescription in the dataset prior to their blood draw? If so, they could be cases it's just that the coverage of data collection is patchy and therefore they do not have data full stop and we should not include them (as being classed as controls but could be cases)
+
+```{r}
+#read in the whole prescription dataset
+
+presc <- read_csv('edavyson/Antidep_methylation/data/1617_0279_PIS.csv') %>% as.data.frame()
+
+presc$DispDate <- ymd(presc$DispDate)
+presc$PrescDate <- ymd(presc$PrescDate)
+presc$PaidDate <- ymd(presc$PaidDate)
+
+# identify the controls for antidep phenotype 1 and extract
+# the appt date , subID, id, area and location
+
+
+antidep_pheno1_controls <- appt_id %>% filter(id %in% antidep_pheno1_mrg[antidep_pheno1_mrg$antidep_pheno1==0, 'IID']) %>% select(id, appt, substitutionID, area, Location)
+
+# remove the duplicate IDs from the controls 
+
+antidep_pheno1_controls <- antidep_pheno1_controls %>% distinct(id, .keep_all = TRUE)
+
+# look at the proportion with appointment dates before '30-04-2009'
+# this is 7102 people of the controls had their appointment on or after 30-04-2009 and 5109 had their appointment before this date 
+
+table(antidep_pheno1_controls$appt < ymd('2009-04-30'))
+
+# get the prescription data for the control subjects 
+presc_antidep_pheno1_controls <- merge(presc, antidep_pheno1_controls, by = 'substitutionID')
+
+# the number of people after merging with the prescription data is 11,679 (so 532 people have no prescriptions whatsoever in the database- check they have been linked? )
+
+# the controls which actually had a prescription record in the dataset before their blood draw (4941 people)
+
+presc_antidep_pheno1_controls <- presc_antidep_pheno1_controls %>% rowwise() %>% mutate(Disp_beforeappt = ifelse(DispDate <= appt, TRUE, FALSE))
+
+presc_antidep_pheno1_controls_before <- presc_antidep_pheno1_controls %>% filter(Disp_beforeappt == TRUE)
+
+# range of dates of the appointments for those with a prescription before the appointment
+
+presc_antidep_pheno1_controls_before %>% distinct(id, .keep_all = T) %>% as.data.frame() %>% pull(appt) %>% range()
+
+
+
+```
+
+#### Clean AD phenotypes 
+
+Removing those from the controls who did not have a prescription of ANY kind prior to the GS appointment, as we do not have the data available for the individuals. 
+
+```{r}
+
+antidep_pheno1_clean <- antidep_pheno1_mrg %>% filter(antidep_pheno1 == 1 | (antidep_pheno1== 0 & IID %in% presc_antidep_pheno1_controls_before$id))
+
+antidep_pheno2_clean <- antidep_pheno2_mrg %>% filter(antidep_pheno2 == 1 | (antidep_pheno2 == 0 & IID %in% presc_antidep_pheno1_controls_before$id))
+
+antidep_phenos_clean <- rbind(as.data.frame(table(antidep_pheno1_clean$antidep_pheno1)) %>% mutate(phenotype = 1, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1), as.data.frame(table(antidep_pheno2_clean$antidep_pheno2)) %>% mutate(phenotype = 2, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1))
+
+ggplot(antidep_phenos_clean, aes(x= as.factor(phenotype), y = Freq, fill = Group)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Pheno 1: \n Antidep Episode vs \nNo Antidep', ' Pheno 2: \n MDD cases only'))+ geom_text(aes(label = Freq), vjust = -0.2, position = position_dodge(.9), size = 4)+scale_fill_discrete(name = '') + theme_minimal()+theme(axis.text.x=element_text(size=12))
+
+
+
+```
+
+##### Other prescriptions for cases /controls
+
+```{r}
+# the drugs that were prescribed 
+
+# dictionary for the BNF chapters 
+# accessed from openprescribing.net/bnf/
+
+BNF_chapters <- c('01' = 'Gastro-Intestinal System' , '02' = 'Cardiovascular System', '03' = 'Respiratory System' , '04' = 'Central Nervous System' , '05' = ' Infections', '06' = 'Endocrine System', '07' = 'Obstetrics, Gynaecology and Urinary-Tract Disorders', '08' = 'Malignant Disease and Immunosuppression', '09' = 'Nutrition and Blood', '10' = 'Musculoskeletal and Joint Diseases' , '11' = 'Eye' , '12' = 'Ear, Nose and Oropharynx' , '13' = 'Skin', '14' = ' Immunological Products and Vaccines', '15' = 'Anaesthesia' , '18' = 'Preparations used in Diagnosis', '19' = 'Other Drugs and Preparations' , '20' = 'Dressings', '21' = 'Appliances', '22' = 'Incontinence Appliances' , '23' = 'Stoma Appliances')
+
+
+# the controls which do have a prescription prior # there is one NA value for 'ADHESIVE REMOVERS (SPRAYS  LIQUIDS  WIPES)' prescription 
+# change this to 23 manually 
+# https://openprescribing.net/bnf/2315/
+
+presc_antidep_pheno1_controls_before[is.na(presc_antidep_pheno1_controls_before$PIBNFParagraphCode), 'PIBNFParagraphCode'] <- '23'
+
+presc_antidep_pheno1_controls_before <- presc_antidep_pheno1_controls_before %>% rowwise() %>% mutate(BNF_chapter = substr(PIBNFParagraphCode, 1,2), BNF_chapter_name = BNF_chapters[[BNF_chapter]]) %>% as.data.frame()
+
+# table of prescription counts and proportions
+antidep_con_before_counts <- as.data.frame(table(presc_antidep_pheno1_controls_before$BNF_chapter_name)) %>% rename(BNF_chapter_name= Var1) %>% mutate(antidep_status = 'Controls') %>% mutate(percent_prescrip = round(Freq / sum(Freq),3)*100)
+
+
+# table of people counts and proportions
+
+antidep_con_before_counts_ppl <- presc_antidep_pheno1_controls_before %>% group_by(BNF_chapter_name) %>% summarise(num_people = n_distinct(substitutionID)) %>% as.data.frame()%>% mutate(prop_people = round(num_people/length(unique(presc_antidep_pheno1_controls_before$substitutionID)),3)*100) 
+
+# merge together 
+
+antidep_con_before_counts <- merge(antidep_con_before_counts, antidep_con_before_counts_ppl, by = 'BNF_chapter_name')
+
+# plot of the prescriptions that these people were prescribed before the blood draw (no ADs)
+
+ggplot(antidep_con_before_counts , aes(x= BNF_chapter_name, y = Freq, fill = BNF_chapter_name)) + geom_bar(stat= "identity") + coord_flip()+labs(x = 'BNF chapter', y = 'Number of Prescriptions') + scale_fill_got(discrete = TRUE, 'BNF chapter', option = 'Margaery') + theme_minimal()+ geom_text(aes(label = Freq), hjust = -0.5, color = "black", size = 3) + ylim(0,30000) + theme(legend.position = 'none', plot.title = element_text(hjust = 0.5)) + ggtitle('Prescriptions for those prescribed medications other than ADs prior to GS appointment')
+
+# plot of the prescriptions (in terms of people) that these people were prescribed before the blood draw (no ADs)
+
+ggplot(antidep_con_before_counts , aes(x= BNF_chapter_name, y = num_people, fill = BNF_chapter_name)) + geom_bar(stat= "identity") + coord_flip()+labs(x = 'BNF chapter', y = 'Number of individuals prescribed a medication') + scale_fill_got(discrete = TRUE, 'BNF chapter', option = 'Margaery') + theme_minimal()+ geom_text(aes(label = Freq), hjust = -0.5, color = "black", size = 3) + ylim(0,2100) + theme(legend.position = 'none', plot.title = element_text(hjust = 0.5)) + ggtitle('Prescriptions for those prescribed medications other than ADs prior to GS appointment')
+
+
+```
+
+For cases: 
+I.e what were the other prescriptions prescribed for cases before the blood draw, and see if there are any discrepancies between cases and controls 
+
+```{r}
+
+# establishing the appointment dates for cases
+
+antidep_pheno1_cases <- appt_id %>% filter(id %in% antidep_pheno1_mrg[antidep_pheno1_mrg$antidep_pheno1==1, 'IID']) %>% select(id, appt, substitutionID, area, Location)
+
+# merging the cases with the prescription data (get their prescriptions)
+
+presc_antidep_pheno1_cases <- merge(antidep_pheno1_cases, presc, by = 'substitutionID')
+
+# selecting the prescriptions which occur before the appointment 
+
+presc_antidep_pheno1_cases_before <- presc_antidep_pheno1_cases %>% rowwise() %>% filter(DispDate < appt)
+
+# label each prescription according to BNF chapter 
+
+presc_antidep_pheno1_cases_before <- presc_antidep_pheno1_cases_before %>% rowwise() %>% mutate(BNF_chapter = substr(PIBNFParagraphCode, 1,2), BNF_chapter_name = BNF_chapters[[BNF_chapter]]) %>% as.data.frame()
+
+# table of prescription counts and proportions
+
+antidep_case_before_counts <- as.data.frame(table(presc_antidep_pheno1_cases_before$BNF_chapter_name)) %>% rename(BNF_chapter_name= Var1) %>% mutate(antidep_status='Cases') %>% mutate(percent_prescrip = round(Freq / sum(Freq),3)*100)
+
+# table of people counts and proportions 
+
+antidep_case_before_counts_ppl <- presc_antidep_pheno1_cases_before %>% group_by(BNF_chapter_name) %>% summarise(num_people = n_distinct(substitutionID)) %>% as.data.frame()%>% mutate(prop_people = round(num_people/length(unique(presc_antidep_pheno1_cases_before$substitutionID)),3)*100) 
+
+# merge together 
+
+antidep_case_before_counts <- merge(antidep_case_before_counts, antidep_case_before_counts_ppl, by = 'BNF_chapter_name')
+
+# graph of prescription numbers 
+
+ggplot(antidep_con_before_counts , aes(x= BNF_chapter_name, y = Freq, fill = BNF_chapter_name)) + geom_bar(stat= "identity") + coord_flip()+labs(x = 'BNF chapter', y = 'Number of Prescriptions') + scale_fill_got(discrete = TRUE, 'BNF chapter', option = 'Margaery') + theme_minimal()+ geom_text(aes(label = Freq), hjust = -0.5, color = "black", size = 3) + ylim(0,30000) + theme(legend.position = 'none', plot.title = element_text(hjust = 0.5)) + ggtitle('Other prescriptions for those prescribed ADs medications prior to GS appointment')
+
+# graph of people numbers 
+ggplot(antidep_case_before_counts , aes(x= BNF_chapter_name, y = num_people, fill = BNF_chapter_name)) + geom_bar(stat= "identity") + coord_flip()+labs(x = 'BNF chapter', y = 'Number of individuals prescribed a medication') + scale_fill_got(discrete = TRUE, 'BNF chapter', option = 'Margaery') + theme_minimal()+ geom_text(aes(label = Freq), hjust = -0.5, color = "black", size = 3) + ylim(0,1100) + theme(legend.position = 'none', plot.title = element_text(hjust = 0.5)) + ggtitle('Other prescriptions for those prescribed ADs medications prior to GS appointment')
+
+
+#both together (cases and controls)
+
+other_pres_antidep1 <- rbind(antidep_con_before_counts, antidep_case_before_counts)
+
+ggplot(other_pres_antidep1, aes(x= BNF_chapter_name, y = prop_people, fill = antidep_status)) + geom_bar(stat= "identity", position = 'dodge') + coord_flip()+labs(x = 'BNF chapter', y = '% of individuals recieving a prescription') + scale_fill_got(discrete = TRUE, 'Antidepressant phenotype', option = 'Margaery') + theme_minimal()+ geom_text(aes(label = prop_people), hjust = -0.5, color = "black", size = 3, position = position_dodge(width = 0.9))+ylim(0, 103)+ theme(plot.title = element_text(hjust = 0.5)) + ggtitle('Other prescriptions prior to GS appointment')
+
+
+```
+
+The controls still have a few Central Nervous System Drugs, look at what these were.
+
+```{r}
+table(presc_antidep_pheno1_controls_before %>% filter(BNF_chapter == "04") %>% select(PIApprovedName))
+
+```
+
+##### Dist of appointment dates
+
+Look to see whether the appointment dates for those with prescriptions before the appointment are generally later than those without prescriptions before the appointment (more time to get a prescription?)
+
+```{r}
+
+# Distribution of the appointment dates for those with prescriptions before the appointment 
+
+ggplot(presc_antidep_pheno1_controls_before %>% distinct(substitutionID, .keep_all = TRUE), aes(x = as.Date(appt)))+
+    geom_histogram(binwidth = 30, position = "identity") +
+    labs(x = "Month", y = "Frequency") +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
+    theme_minimal() + coord_flip()
+
+# Distribution of the appointment dates for those with no prescriptions before the appointment 
+# select those who did not have prescriptions prior to appointment (i.e in the control_before table)
+# just want these to be people who have prescriptions for other medications but AFTER the blood draw only 
+# these appointment dates fall before 2009 (the first prescription date is 04-03-2009)
+
+# column any_before which reflects if someone has ANY prescriptions before the appointment date
+
+presc_antidep_pheno1_controls <- presc_antidep_pheno1_controls %>% group_by(id) %>% mutate(any_before = ifelse(any(Disp_beforeappt)==TRUE, TRUE, FALSE))
+  
+# identify those people who had prescriptions only after the appointment date
+
+presc_antidep_pheno1_controls_after <- presc_antidep_pheno1_controls %>% filter(any_before == FALSE) %>% distinct(id, .keep_all = T)
+
+ggplot(presc_antidep_pheno1_controls_after %>% distinct(substitutionID, .keep_all = TRUE), aes(x = as.Date(appt))) +
+    geom_histogram(binwidth = 30, position = "identity") +
+    labs(x = "Month", y = "Frequency") +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") +
+    theme_minimal() + coord_flip() + geom_vline(xintercept = as.Date("2009-04-01"), linetype = "dashed", color = "red")
+
+# there are 4,800 people with the appointment before the first dispense date of the prescription (30-04-2009). There are 1938 people with the appointment after the first dispense date of a prescriptions. This could be the beginning date? 
+
+presc_antidep_pheno1_controls_after %>% distinct(substitutionID, .keep_all = TRUE) %>% filter(appt <= ymd("2009-04-30")) %>% dim()
+
+table(presc_antidep_pheno1_controls_after %>% distinct(substitutionID, .keep_all = TRUE) %>% pull(appt) <= ymd("2009-04-30"))
+```
+
+
+#### Clean AD phenotypes
+
+Could you make another phenotype - excluding people who had appointments prior to the collection of prescription data (before 2009)
+
+```{r}
+
+# identify the controls which have their appointment before the prescription linkage (i.e the first date of the prescription)
+
+antidep_controls_appt_before <- antidep_pheno1_controls %>% filter(appt < ymd("2009-04-30"))
+
+# remove those from controls with the appointment date before the date of the first prescription (not linked)
+
+antidep_pheno1_clean_appt <- antidep_pheno1_mrg %>% filter(antidep_pheno1 == 1 | (antidep_pheno1== 0 & !(IID %in% antidep_controls_appt_before$id)))
+
+antidep_pheno2_clean_appt <- antidep_pheno2_mrg %>% filter(antidep_pheno2 == 1 | (antidep_pheno2== 0 & !(IID %in% antidep_controls_appt_before$id)))
+
+antidep_phenos_clean_appt <- rbind(as.data.frame(table(antidep_pheno1_clean_appt$antidep_pheno1)) %>% mutate(phenotype = 1, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1), as.data.frame(table(antidep_pheno2_clean_appt$antidep_pheno2)) %>% mutate(phenotype = 2, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1))
+
+ggplot(antidep_phenos_clean_appt, aes(x= as.factor(phenotype), y = Freq, fill = Group)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Pheno 1: \n Antidep Episode vs \nNo Antidep', ' Pheno 2: \n MDD cases only'))+ geom_text(aes(label = Freq), vjust = -0.2, position = position_dodge(.9), size = 4)+scale_fill_discrete(name = '') + theme_minimal()+theme(axis.text.x=element_text(size=12))+ ggtitle('Filtered on those with appointment dates > 04.03.2009')
+
+```
+
+
+### SSRIs
+
+```{r}
+
+# filter to just the SSRI prescriptions 
+
+SSRI_all_parsed <- antidep_all_parsed %>% filter(antidep_type == 'SSRIs')
+SSRI_all_stckpile <- antidep_all_stckpile %>% filter(antidep_type == 'SSRIs')
+
+SSRI_stck_10lee <- num_cases(SSRI_all_stckpile, 0.1, 'ALL', 'NewPaidQuantity', merge_ep = FALSE) # 10% leeway, stockpiling accounted for
+
+```
+
+
+```{r}
+
+# SSRI phenotype 1 
+
+# cases
+
+SSRI_pheno1_cases <- SSRI_stck_10lee[[7]]
+SSRI_pheno1_cases <- SSRI_pheno1_cases %>% select(c(id, substitutionID)) %>% mutate(SSRI_pheno1 = 1)
+SSRI_pheno1_cases <- merge(SSRI_pheno1_cases, oii_file[,c('IID', 'FID')], by.x = 'id', by.y = 'IID') 
+SSRI_pheno1_cases <- SSRI_pheno1_cases %>% select(c(FID, id, SSRI_pheno1))
+colnames(SSRI_pheno1_cases)[2] <- 'IID'
+# controls 
+
+SSRI_pheno1_control <- appt_id %>% anti_join(antideps)
+SSRI_pheno1_control <- merge(SSRI_pheno1_control, oii_file, by.x = 'id', by.y = 'IID')
+SSRI_pheno1_control <- SSRI_pheno1_control %>% mutate(SSRI_pheno1 = 0)
+SSRI_pheno1_control <- SSRI_pheno1_control[!duplicated(SSRI_pheno1_control), ]
+SSRI_pheno1_control <- SSRI_pheno1_control %>% select(c(FID, id, SSRI_pheno1))
+colnames(SSRI_pheno1_control)[2] <- 'IID'
+
+# bind together 
+
+SSRI_pheno1 <- rbind(SSRI_pheno1_cases, SSRI_pheno1_control)
+
+# remove those who have opted out (not in the BMI panel from the new release)
+
+gs_bmi_file <- read_csv('Data/GenScot/2023_release/bmi_general_phenos/body.gwasp.202302.csv') %>% as.data.frame()
+SSRI_pheno1_mrg <- SSRI_pheno1 %>% filter(IID %in% gs_bmi_file$id)
+print(paste0('Number of IDs lost for phenotype 1: ', nrow(SSRI_pheno1) - nrow(SSRI_pheno1_mrg))) # a control
+
+
+# antidepressant phenotype 2
+# cases 
+scid_pheno <- read.table('Data/GenScot/genscot_depression_mergedFID.tsv', sep = '\t', header = T)
+SSRI_pheno2_cases <- merge(SSRI_pheno1_cases, scid_pheno, by = c('IID', 'FID'))
+SSRI_pheno2_cases <-SSRI_pheno2_cases %>% filter(scid == 1) %>% mutate(SSRI_pheno2 = 1)
+
+# controls 
+
+SSRI_pheno2_control <- merge(SSRI_pheno1_control, scid_pheno %>% select(IID, FID, scid), by = c('IID', 'FID'))
+SSRI_pheno2_control <- SSRI_pheno2_control %>% filter(scid == 1) %>% mutate(SSRI_pheno2 = 0)
+
+# bind together 
+
+SSRI_pheno2 <- rbind(SSRI_pheno2_control %>% select(FID, IID, SSRI_pheno2), SSRI_pheno2_cases %>% select(FID, IID, SSRI_pheno2))
+colnames(SSRI_pheno2)[2] <- 'IID'
+
+# remove those who have opted out (not in the BMI panel from the new release)
+SSRI_pheno2_mrg <- SSRI_pheno2 %>% filter(IID %in% gs_bmi_file$id)
+print(paste0('Number of IDs lost for phenotype 2: ', nrow(SSRI_pheno2) - nrow(SSRI_pheno2_mrg))) # a control
+
+
+### antidepressant phenotype 1 and 2 graphs ### 
+
+SSRI_phenos <- data.frame(phenotype = c(1,2), cases = c(nrow(SSRI_pheno1_mrg %>% filter(SSRI_pheno1 == 1)), nrow(SSRI_pheno2_mrg %>% filter(SSRI_pheno2 == 1))), controls = c(nrow(SSRI_pheno1_mrg %>% filter(SSRI_pheno1 == 0)), nrow(SSRI_pheno2_mrg %>% filter(SSRI_pheno2 ==0))))
+
+SSRI_phenos <- pivot_longer(SSRI_phenos, cols = c("cases", "controls"), names_to = "group", values_to = "Count") %>% as.data.frame()
+ggplot(SSRI_phenos, aes(x= as.factor(phenotype), y = Count, fill = group)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Pheno 1: \n SSRI Episode vs No Antidep', ' Pheno 2: \n Pheno 1 subsetted to MDD cases only'))+ geom_text(aes(label = Count), vjust = -0.2, position = position_dodge(.9), size = 3)+scale_fill_discrete(name = '') + theme_minimal() + labs(title = 'SSRI phenotypes')
+
+```
+
+#### VERY clean SSRI phenotypes 
+
+Removing those from the controls who did not have a prescription of ANY kind prior to the GS appointment, as we do not have the data available for the individuals. 
+
+```{r}
+
+# identify the controls for SSRI phenotype 1
+# and extract their ID, appointment date, area and location
+SSRI_pheno1_controls <- appt_id %>% filter(id %in% SSRI_pheno1_mrg[SSRI_pheno1_mrg$SSRI_pheno1==0, 'IID']) %>% select(id, appt, substitutionID, area, Location)
+
+# merge with the prescription date (i.e get all prescriptions for the controls in the SSRI phenotype )
+presc_SSRI_pheno1_controls <- merge(SSRI_pheno1_controls, presc, by = 'substitutionID')
+
+# the controls which actually had a prescription record in the dataset before the appointment date
+# for each row, filter out those which had a Dispense date before the Appointment date
+
+presc_SSRI_pheno1_controls_before <- presc_SSRI_pheno1_controls %>% rowwise() %>% filter(DispDate <= appt)
+
+# now filter out the control instances where there was no data for ANY prescription in the data 
+
+SSRI_pheno1_clean <- SSRI_pheno1_mrg %>% filter(SSRI_pheno1 == 1 | (SSRI_pheno1== 0 & IID %in% presc_SSRI_pheno1_controls_before$id))
+
+SSRI_pheno2_clean <- SSRI_pheno2_mrg %>% filter(SSRI_pheno2 == 1 | (SSRI_pheno2 == 0 & IID %in% presc_SSRI_pheno1_controls_before$id))
+
+# plot the numbers of these 'cleaner' phenotypes 
+
+SSRI_phenos_clean <- rbind(as.data.frame(table(SSRI_pheno1_clean$SSRI_pheno1)) %>% mutate(phenotype = 1, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1), as.data.frame(table(SSRI_pheno2_clean$SSRI_pheno2)) %>% mutate(phenotype = 2, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1))
+
+ggplot(SSRI_phenos_clean, aes(x= as.factor(phenotype), y = Freq, fill = Group)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Pheno 1: \n SSRI Episode vs \nNo SSRI', ' Pheno 2: \n MDD cases only'))+ geom_text(aes(label = Freq), vjust = -0.2, position = position_dodge(.9), size = 4)+scale_fill_discrete(name = '') + theme_minimal()+theme(axis.text.x=element_text(size=12))
+
+
+
+```
+
+#### Clean SSRI phenotypes 
+
+Excluding people who had appointments prior to the collection of prescription data (before 2009)
+
+```{r}
+
+# identify the controls which have their appointment before the prescription linkage (i.e the first date of the prescription)
+
+SSRI_controls_appt_before <- SSRI_pheno1_controls %>% filter(appt < ymd("2009-04-30"))
+
+# remove those from controls with the appointment date before the date of the first prescription (not linked)
+
+SSRI_pheno1_clean_appt <- SSRI_pheno1_mrg %>% filter(SSRI_pheno1 == 1 | (SSRI_pheno1== 0 & !(IID %in% SSRI_controls_appt_before$id)))
+
+SSRI_pheno2_clean_appt <- SSRI_pheno2_mrg %>% filter(SSRI_pheno2 == 1 | (SSRI_pheno2== 0 & !(IID %in% SSRI_controls_appt_before$id)))
+
+SSRI_phenos_clean_appt <- rbind(as.data.frame(table(SSRI_pheno1_clean_appt$SSRI_pheno1)) %>% mutate(phenotype = 1, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1), as.data.frame(table(SSRI_pheno2_clean_appt$SSRI_pheno2)) %>% mutate(phenotype = 2, Group = ifelse(Var1 == 0, 'Controls', 'Cases')) %>% select(-Var1))
+
+ggplot(SSRI_phenos_clean_appt, aes(x= as.factor(phenotype), y = Freq, fill = Group)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Pheno 1: \n SSRI Episode vs \nNo SSRI', ' Pheno 2: \n MDD cases only'))+ geom_text(aes(label = Freq), vjust = -0.2, position = position_dodge(.9), size = 4)+scale_fill_discrete(name = '') + theme_minimal()+theme(axis.text.x=element_text(size=12))+ ggtitle('Filtered on those with appointment dates > 04.03.2009')
+
+```
+
+
+#### Final phenotype numbers 
+
+```{r}
+### GRM_ids are the FIDs aligned 
+
+#### Antidepressant phenotypes 
+
+# read in the GRM id file which is used by GCTA when residualising the phenotypes 
+
+GRM_ids <- read.table('edavyson/Antidep_methylation/antidep_phenotypes/QCdGS20K.grm.id', header = F)
+
+colnames(GRM_ids) <- c('FID_GRM', 'IID')
+
+# merge the GRM ID file with the phenotype file to see if FIDs differ for the same individual
+
+antidep_pheno1_clean_appt_GRM <- merge(antidep_pheno1_clean_appt, GRM_ids, by = 'IID')
+
+# Are there any individuals with a mismatch between the GRM FID and the phenotype FID
+table(antidep_pheno1_clean_appt_GRM$FID == antidep_pheno1_clean_appt_GRM$FID_GRM)
+
+# these are the phenotype numbers included in the analysis (after residualising on GRM, have to match those who have genetic data so lose a couple)
+
+table(antidep_pheno1_clean_appt_GRM$antidep_pheno1, useNA = 'always')
+
+# NOPE! Do not need to rerun with harmonised FIDs (as no one being drop due to a mismatch as there is not one! Yay!)
+
+antidep_pheno2_clean_appt_GRM <- merge(antidep_pheno2_clean_appt, GRM_ids, by = 'IID')
+
+# phenotype numbers included in the analysis (after residualising for GRM)
+table(antidep_pheno2_clean_appt_GRM$antidep_pheno2, useNA = 'always')
+
+#### SSRI phenotypes 
+## no mismatch (no need to rerun!)
+
+SSRI_pheno1_clean_appt_GRM <- merge(SSRI_pheno1_clean_appt, GRM_ids, by = 'IID')
+
+# Are there any individuals with a mismatch between the GRM FID and the phenotype FID
+table(SSRI_pheno1_clean_appt_GRM$FID == SSRI_pheno1_clean_appt_GRM$FID_GRM)
+
+
+SSRI_pheno2_clean_appt_GRM <- merge(SSRI_pheno2_clean_appt, GRM_ids, by = 'IID')
+
+table(SSRI_pheno2_clean_appt_GRM$FID == SSRI_pheno2_clean_appt_GRM$FID_GRM)
+
+```
+
+
+##### Saving 
+
+Save to datastore
+
+
+```{r saving_prescrip_phenos_datastore, echo = FALSE}
+# save the files with column names as .csv files (sep = ',')
+# save the files without column names (used in GCTA for residualising) as .pheno files (no sep argument)
+
+# the original phenotypes 
+# do not use, as these probably have control contamination in that there are people in the controls who just do not have linkage data available at the time of blood draw
+
+write.table(antidep_pheno1_mrg, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1.csv', row.names = F, quote = F, sep = ',')
+write.table(antidep_pheno1_mrg, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+write.table(SSRI_pheno1_mrg , 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno1.csv', row.names = F, quote = F, sep = ',')
+write.table(SSRI_pheno1_mrg , 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno1_nocolnames.csv', col.names= FALSE,row.names = F, quote = F)
+
+
+write.table(antidep_pheno2_mrg, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno2.csv', row.names = F, quote = F, sep = ',')
+write.table(antidep_pheno2_mrg, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno2_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+write.table(SSRI_pheno2_mrg , 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno2.csv', row.names = F, quote = F, sep = ',')
+write.table(SSRI_pheno2_mrg , 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno2_nocolnames.pheno', col.names = F,row.names = F, quote = F)
+
+# the 'VERY clean phenotypes'
+
+# i.e the controls have been filtered to those who do have a prescription for anything other than antidepressants prior to the blood draw (i.e they are DEFO in the data base). I think theoretically all individuals with an appointment after the first prescription date will have been linked at the time of the appointment but this makes it certain. Concerns over whether this is selecting a 'iller' subset of the population as controls though (I think this is a sesntivity analysis really).
+
+write.table(antidep_pheno1_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_clean.csv', row.names = F, quote = F, sep = ',')
+write.table(antidep_pheno1_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_clean_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+write.table(antidep_pheno2_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno2_clean.csv', row.names = F, quote = F, sep = ',')
+write.table(antidep_pheno2_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno2_clean_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+write.table(SSRI_pheno1_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno1_clean.csv', row.names = F, quote = F, sep = ',')
+write.table(SSRI_pheno1_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno1_clean_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+write.table(SSRI_pheno2_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno2_clean.csv', row.names = F, quote = F, sep = ',')
+
+write.table(antidep_pheno2_clean, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/SSRI_pheno2_clean_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+## The 'CLEAN' appt appointments 
+## This instead removes controls who have their appointments before the prescription data begins (i.e they definitely were not linked). Setting this criteria to select those with data linked is reasonable and not with the concerns of the potentially pre selecting 'iller' controls who have prescriptions. 
+
+write.table(antidep_pheno1_clean_appt, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_clean_appt.csv', row.names = F, quote = F, sep = ',')
+write.table(antidep_pheno1_clean_appt, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_clean_appt_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+write.table(antidep_pheno2_clean_appt, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno2_clean_appt.csv', row.names = F, quote = F, sep = ',')
+write.table(antidep_pheno2_clean_appt, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno2_clean_appt_nocolnames.pheno', col.names =F,row.names = F, quote = F)
+
+
+############################################################
+
+# PAPER WRITE UP METHODS AND NUMBERS 
+
+############################################################
+
+# Using the clean_appt phenotypes after been residualised by the GRM. Save these files and make the graphs for the final numbers (a few fall out due to not being in the GRM)
+
+# antidep_pheno1
+# cases = those in an episode (n = 861)
+# controls = those linked (appointment after the linkage date '30-04-2009') without an AD prescription  (n = 7090)
+# all with genetic and methylation data 
+
+write.csv(antidep_pheno1_clean_appt_GRM %>% select(FID, IID, antidep_pheno1), 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/final_antidep_pheno1_appt_clean.csv', row.names = F, quote =F)
+
+antidep_pheno1_clean_appt_GRM <- read.csv('edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/final_antidep_pheno1_appt_clean.csv', header = T)
+
+# antidep_pheno2
+
+# cases = those in an episode with MDD (n= 380)
+# controls = those linked without an AD prescription with MDD
+# all with genetic and methylation data available (n = 412)
+
+write.csv(antidep_pheno2_clean_appt_GRM %>% select(FID, IID, antidep_pheno2), 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/final_antidep_pheno2_appt_clean.csv', row.names = F, quote =F)
+
+antidep_pheno2_clean_appt_GRM <- read.csv('edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/final_antidep_pheno2_appt_clean.csv', header = T)
+
+
+# SSRI_pheno1
+
+# cases= those in an SSRI episode (n = 532)
+# controls = those linked without an SSRI prescription (n = 7090) (currently don't think I have removed people with other AD prescriptions from this group- could be something to do? Check whether it will even be in the paper first? )
+
+write.csv(SSRI_pheno1_clean_appt_GRM %>% select(FID, IID, SSRI_pheno1), 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/final_SSRI_pheno1_appt_clean.csv', row.names = F, quote =F)
+
+# SSRI_pheno2
+
+# cases = those in an SSRI episode and with MDD (n = 271)
+# controls = those linked without an SSRI prescription and with MDD (n = 412)
+# all with genetic and methylation data 
+
+write.csv(SSRI_pheno2_clean_appt_GRM %>% select(FID, IID, SSRI_pheno2), 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/SSRI/final_SSRI_pheno2_appt_clean.csv', row.names = F, quote =F)
+
+
+```
+
+##### Self report phenotype
+
+```{r}
+
+# read in the new derived self report 
+# this has been merged with methylation data 
+# and had the GRM's FIDs aligned
+# and merged with GRM id file (i.e does not include people who are not in the GRM)
+
+selfrep_pheno3 <- read_csv('edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3.csv') %>% as.data.frame() %>% rename(selfrep_pheno3 = antidep)
+
+selfrep_pheno4 <-  read_csv('edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_MDD_pheno4_methyl_03_05.csv') %>% as.data.frame() %>% rename(selfrep_pheno4 = antidep, IID = ID) %>% select(FID, IID, selfrep_pheno4)
+
+
+selfrep_phenos <- rbind( data.frame(table(selfrep_pheno3$selfrep_pheno3)) %>% rename(Count=Freq) %>% 
+mutate(phenotype = 'selfrep_pheno3', status=ifelse(Var1 ==0, 'Unexposed', 'Exposed')) %>% 
+select(-Var1),                     data.frame(table(selfrep_pheno4$selfrep_pheno4)) %>%
+  rename(Count=Freq) %>% 
+  mutate(phenotype = 'selfrep_pheno4', status=ifelse(Var1 ==0, 'Unexposed', 'Exposed'))%>% 
+  select(-Var1)
+)
+
+
+selfrep_phenos_graph <- ggplot(selfrep_phenos, aes(x= as.factor(phenotype), y = Count, fill = status)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('All', 'With MDD'))+ geom_text(aes(label = Count), vjust = -0.2, position = position_dodge(.9), size = 3)+scale_fill_discrete(name = '') + theme_minimal() + labs(title = 'Self reported AD phenotypes')+theme(axis.text.x=element_text(size=15))
+
+
+
+
+```
+
+##### Graphs and Numbers
+
+```{r}
+
+antidep_phenos <- rbind( data.frame(table(antidep_pheno1_clean_appt_GRM$antidep_pheno1)) %>% rename(Count=Freq) %>% 
+mutate(phenotype = 'antidep_pheno1', status=ifelse(Var1 ==0, 'Unexposed', 'Exposed')) %>% 
+select(-Var1),                     data.frame(table(antidep_pheno2_clean_appt_GRM$antidep_pheno2)) %>%
+  rename(Count=Freq) %>% 
+  mutate(phenotype = 'antidep_pheno2', status=ifelse(Var1 ==0, 'Unexposed', 'Exposed'))%>% 
+  select(-Var1)
+)
+
+antidep_selfrep_phenos <- rbind(antidep_phenos, selfrep_phenos)
+phenotype_labels <- c('Prescription-derived', 'Prescription-derived MDD', 'Self-report', 'Self-report MDD')
+names(phenotype_labels) <- c('antidep_pheno1', 'antidep_pheno2', 'selfrep_pheno3', 'selfrep_pheno4')
+
+color_order <- c("Unexposed", "Exposed")
+antidep_selfrep_phenos$status <- as.factor(antidep_selfrep_phenos$status)
+antidep_selfrep_phenos$status <- relevel(antidep_selfrep_phenos$status, "Unexposed")
+
+antidep_selfrep_phenos$phenotype_main <- c('PD', 'PD', 'PD', 'PD', 'SR', 'SR', 'SR', 'SR')
+
+antidep_selfrep_plt <- ggplot(antidep_selfrep_phenos, aes(x= status, y = Count, fill = status)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('Unexposed', 'Exposed'))+scale_fill_discrete(name = '') + theme_minimal() + labs(title = 'Antidepressant exposure phenotypes')+theme(axis.text.x=element_text(size=15), plot.title = element_text(hjust = 0.5)) + facet_wrap(~phenotype, labeller = labeller(phenotype=phenotype_labels))+ scale_fill_discrete(name = '', limits = color_order) +
+    scale_color_brewer(palette = "Dark2", aesthetics= c("fill"),name = "Phenotype")
+
+ggsave(filename = 'Year 3/WCPG_presentation/phenotype_num_nolabel.png', plot = antidep_selfrep_plt, width = 8, height = 6, device='png', dpi=300)
+
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/AD_phenotypes_num.png', plot = antidep_selfrep_plt, width = 8, height = 6, device='png', dpi=300)
+
+antidep_selfrep_phenos$phenotype_side <- c('All', 'All', 'MDD only', 'MDD only', 'All', 'All', 'MDD only', 'MDD only')
+
+antidep_selfrep_phenos$phenotype_overall <- c('Antidep_control', 'Antidep_case', 'Antidep_control', 'Antidep_case', 'Selfrep_control', 'Selfrep_case', 'Selfrep_control', 'Selfrep_case')
+
+antidep_phenos_graph <- ggplot(antidep_phenos, aes(x= as.factor(phenotype), y = Count, fill = status)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('All', 'With MDD'))+ geom_text(aes(label = Count), vjust = -0.2, position = position_dodge(.9), size = 3)+scale_fill_discrete(name = '') + theme_minimal() + labs(title = 'Prescription derived AD phenotypes')+theme(axis.text.x=element_text(size=15))
+
+SSRI_phenos <- rbind(
+  data.frame(table(SSRI_pheno1_clean_appt_GRM$SSRI_pheno1)) %>% rename(Count=Freq) %>% 
+mutate(phenotype = 'SSRI_pheno1', status=ifelse(Var1 ==0, 'Control', 'Case')) %>% 
+select(-Var1),                     data.frame(table(SSRI_pheno2_clean_appt_GRM$SSRI_pheno2)) %>%
+  rename(Count=Freq) %>% 
+  mutate(phenotype = 'SSRI_pheno2', status=ifelse(Var1 ==0, 'Control', 'Case'))%>% 
+  select(-Var1)
+)
+
+SSRI_phenos_graph <- ggplot(SSRI_phenos, aes(x= as.factor(phenotype), y = Count, fill = status)) + geom_bar(stat = "identity", position = position_dodge()) + scale_x_discrete(name = '', labels = c('All', 'With MDD'))+ geom_text(aes(label = Count), vjust = -0.2, position = position_dodge(.9), size = 3)+scale_fill_discrete(name = '') + theme_minimal() + labs(title = 'Prescription derived SSRI phenotypes')+theme(axis.text.x=element_text(size=15))
+
+### all the final phenotype numbers together ### 
+
+ggarrange(antidep_phenos_graph + theme(axis.text.x=element_blank()), SSRI_phenos_graph+ theme(axis.text.x=element_blank()), selfrep_phenos_graph, common.legend = TRUE, nrow = 3, ncol = 1)
+
+### triple check the GCTA log files and then the MOA log files that these N's are consistently reported. 
+
+
+```
+
+
+
+
+```{r overlap_with_self_report}
+
+antidep_venn <- list(MDD_cases= scid_pheno %>% filter(scid == 1) %>% .$IID, MDD_controls = scid_pheno %>% filter(scid == 0) %>% .$IID, self_report_antidep = self_report %>% filter(antidep== 1) %>% .$ID, self_report_no_antidep = self_report %>% filter(antidep == 0) %>% .$ID, antidep_prescrip = antidep_pheno1 %>% filter(antidep_pheno1 == 1) %>% .$IID, antidep_no_prescrip = antidep_pheno1 %>% filter(antidep_pheno1 == 0) %>% .$IID)
+
+ names(antidep_venn) <- c('MDD cases', 'MDD_controls', 'Self reported \n antidep use', 'No self report \n antidep use','antidep prescription \n episode', 'antidep no prescription \n episode')
+
+ upset_plot <- upset(fromList(antidep_venn),nsets = 8, order.by = 'freq', set_size.show = TRUE, mb.ratio = c(0.6, 0.4))
+upset_plot
+
+
+
+
+```
+
+### Demographic info 
+
+For demographic table : 
+
+Age
+Sex
+BMI
+Smoking Status
+Pack years 
+AHRR probe methylation (?)
+
+```{r}
+
+# age and AHRR methylation
+
+qcovs <- read.table('edavyson/Antidep_methylation/OSCA_data/cov_files_30_06/qcovs_30_06.txt', header = T)
+
+# sex
+covs <- read.table('edavyson/Antidep_methylation/OSCA_data/cov_files_30_06/covs_30_06.txt', header =T) 
+
+# bmi (on the updated release aswell)
+
+head(gs_bmi_file)
+
+# smoking 
+
+smoke_pack <- read.csv('/Volumes/igmm/GenScotDepression/data/genscot/phenotypes/smoking/pack_years_2019-04.csv', header = T)
+smoke_ever <- read.csv('/Volumes/igmm/GenScotDepression/data/genscot/phenotypes/smoking/ever_smoke_2019-04.csv', header = T)
+
+
+smoking <- merge(smoke_pack, smoke_ever, by = 'Sample_Name')
+# recode the smoking as current, former and never smoker 
+
+# Question: Have you ever smoked tobacco? 
+# 1- Yes Current
+# 2 - Yes but stopped in last 12 months 
+# 3 - Yes but stopped more than 12 months ago
+# 4 No Never smoked 
+# 5 (NA values? )
+
+# create a variable which is 'Current', 'Former' and 'Never'
+
+smoking <- smoking %>% mutate(smoking_var = case_when(ever_smoke == 1 ~ 'Current', ever_smoke == 2 ~ 'Former', ever_smoke == 3 ~ 'Former', ever_smoke == 4 ~ 'Never', TRUE ~ NA_character_)) %>% rename(IID = Sample_Name)
+
+# merge all relevant covariate measures (using full merge- do not lose instances if data not there for 1 covariate)
+# smoking and qcovs (age and AHRR)
+
+demographics <- merge(smoking %>% select(IID, pack_years, smoking_var), qcovs %>% select(IID, age, cg05575921), by ="IID", all = TRUE)
+
+# and covs (sex)
+
+demographics <- merge(demographics, covs %>% mutate(sex_name = ifelse(sex_coded == 0, 'Female', 'Male')) %>% select(IID, sex_name), by = 'IID', all=TRUE)
+
+# bmi
+
+demographics <- merge(demographics, gs_bmi_file %>% select(id, bmi), by.x = 'IID', by.y= 'id', all = TRUE)
+
+# mdd
+
+demographics <- merge(demographics, scid_pheno %>% mutate(scid_name = case_when(scid == 0 ~ 'Control', scid==1 ~ 'Case', TRUE ~ NA)) %>% select(IID, scid_name),by = "IID")
+
+# merge with a phenotype 
+
+antidep_pheno1_demo <- merge(antidep_pheno1_clean_appt_GRM, demographics,by = 'IID', all = TRUE)
+selfrep_pheno3_demo <- merge(selfrep_pheno3, demographics, by = 'IID', all = TRUE)
+selfrep_pheno3_demo <- selfrep_pheno3_demo[!(is.na(selfrep_pheno3_demo$selfrep_pheno3)),] # remove NA values 
+antidep_pheno2_demo <- merge(antidep_pheno2_clean_appt_GRM, demographics, by = 'IID', all = TRUE)
+antidep_pheno2_demo <- antidep_pheno2_demo[!(is.na(antidep_pheno2_demo$antidep_pheno2)),]
+
+# create a summary of this phenotype 
+# summarise function with the continuous covs 
+# ratios for the discrete covs (sex, smoking)
+
+# summary function for cases and controls 
+# phenotype is the phenotype column name in the phenotype file 
+# file is the dataframe with the phenotype and covariate information 
+
+phenotype_summary <- function(phenotype, file) {
+  file <- file[!is.na(file[,phenotype]),]
+  print(colnames(file))
+  summary <- file %>% 
+    group_by(across(all_of(phenotype)))  %>% 
+  summarise(age = paste0(signif(mean(age, na.rm = T),3), ' (', signif(sd(age, na.rm = T),3), ') , ', signif(range(age, na.rm = T)[1],3), '-', signif(range(age, na.rm = T)[2],3)), bmi = paste0(signif(mean(bmi, na.rm = T),3), ' (', signif(sd(bmi, na.rm = T),3),') , ',                            signif(range(bmi, na.rm = T)[1],3), '-', signif(range(bmi, na.rm = T)[2],3)), packyears= paste0(signif(mean(pack_years, na.rm = T),3),' (', signif(sd(pack_years, na.rm = T),3), ') , ',
+signif(range(pack_years, na.rm = T)[1],3), '-', signif(range(pack_years, na.rm = T)[2],3)), n = n()) %>%
+  
+  mutate(current_smoking= c(file %>% group_by(across(all_of(c(phenotype, 'smoking_var')))) %>% summarise(count = n()) %>%
+                             mutate(percentage = (count/sum(count))*100) %>%
+                             mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                             filter(!!sym(phenotype) == 0 & smoking_var == 'Current') %>% pull(val),
+                        file %>% group_by(across(all_of(c(phenotype, 'smoking_var')))) %>% summarise(count = n()) %>%
+                             mutate(percentage = (count/sum(count))*100) %>%
+                             mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                             filter(!!sym(phenotype) == 1 & smoking_var == 'Current') %>% pull(val)), 
+         
+         former_smoking= c(file %>% group_by(across(all_of(c(phenotype, 'smoking_var')))) %>% summarise(count = n()) %>%
+                             mutate(percentage = (count/sum(count))*100) %>%
+                             mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                             filter(!!sym(phenotype) == 0 & smoking_var == 'Former') %>% pull(val),
+                        file %>% group_by(across(all_of(c(phenotype, 'smoking_var')))) %>% summarise(count = n()) %>%
+                             mutate(percentage = (count/sum(count))*100) %>%
+                             mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                             filter(!!sym(phenotype) == 1 & smoking_var == 'Former') %>% pull(val)) , 
+         
+         never_smoking= c(file %>% group_by(across(all_of(c(phenotype, 'smoking_var')))) %>% summarise(count = n()) %>%
+                             mutate(percentage = (count/sum(count))*100) %>%
+                             mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                             filter(!!sym(phenotype) == 0 & smoking_var == 'Never') %>% pull(val),
+                        file %>% group_by(across(all_of(c(phenotype, 'smoking_var')))) %>% summarise(count = n()) %>%
+                             mutate(percentage = (count/sum(count))*100) %>%
+                             mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                             filter(!!sym(phenotype) == 1 & smoking_var == 'Never') %>% pull(val)), 
+         
+         Female = c(file %>% 
+                         group_by(across(all_of(c(phenotype, 'sex_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                          mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==0 & sex_name == 'Female') %>% 
+                         pull(val), 
+                         file %>% group_by(across(all_of(c(phenotype, 'sex_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                          mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==1 & sex_name == 'Female') %>% 
+                         pull(val)), 
+         Male = c(file %>% 
+                         group_by(across(all_of(c(phenotype, 'sex_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                          mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==0 & sex_name == 'Male') %>% 
+                         pull(val), 
+                         file %>% group_by(across(all_of(c(phenotype, 'sex_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                          mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==1 & sex_name == 'Male') %>% 
+                         pull(val)), 
+         
+          Cases = c(file %>%
+                         group_by(across(all_of(c(phenotype, 'scid_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                         mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==0 & scid_name == 'Case') %>% 
+                         pull(val), 
+                    file %>%
+                         group_by(across(all_of(c(phenotype, 'scid_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                         mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==1 & scid_name == 'Case') %>% 
+                         pull(val)),
+         Controls = c(file %>%
+                         group_by(across(all_of(c(phenotype, 'scid_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                         mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==0 & scid_name == 'Control') %>% 
+                         pull(val), 
+                      file %>%
+                         group_by(across(all_of(c(phenotype, 'scid_name')))) %>% 
+                         summarise(count = n()) %>% 
+                         mutate(percentage = (count/sum(count))*100) %>%
+                         mutate(val = paste0(count, ' (', signif(percentage,2), '%)')) %>%
+                         filter(!!sym(phenotype)==1 & scid_name == 'Control') %>% 
+                         pull(val)
+                      )) %>% as.data.frame()
+  
+  summary <- summary %>% select(phenotype, n, age ,bmi,  Female, Male, current_smoking, former_smoking, never_smoking, packyears, Cases, Controls)
+  colnames(summary) <- c(phenotype, 'N', 'Age (%) - range','BMI (%) - range', 'Sex Female', 'Sex Male', 'Current smoker', 'Former smoker', 'Never smoker','Pack years', 'MDD cases', 'MDD controls')
+return(summary)
+}
+
+antidep_pheno1_summary <- phenotype_summary('antidep_pheno1', antidep_pheno1_demo) %>% mutate(antidep_pheno1= ifelse(antidep_pheno1 == 0, 'Controls', 'Cases'))
+antidep_pheno1_summary <- t(antidep_pheno1_summary)
+colnames(antidep_pheno1_summary) <- c('Antidep_controls', 'Antidep_cases')
+antidep_pheno1_summary <- antidep_pheno1_summary[-1,]
+selfrep_pheno3_summary <- phenotype_summary('selfrep_pheno3', selfrep_pheno3_demo) %>% mutate(selfrep_pheno3=ifelse(selfrep_pheno3==0, 'Controls', 'Cases'))
+selfrep_pheno3_summary<- t(selfrep_pheno3_summary)
+colnames(selfrep_pheno3_summary) <- c('Selfrep_controls', 'Selfrep cases')
+selfrep_pheno3_summary <- selfrep_pheno3_summary[-1,]
+# save them 
+
+phenotype_summaries <- cbind(antidep_pheno1_summary, selfrep_pheno3_summary)
+
+write.csv(antidep_pheno1_summary, 'antidep_methylation/Writing/antidep_pheno1_summary.csv', row.names = F, quote = F)
+
+write.csv(selfrep_pheno3_summary, 'antidep_methylation/Writing/selfrep_pheno3_summary.csv', row.names = F, quote = F)
+
+write.table(phenotype_summaries, 'antidep_methylation/Writing/pheno_summaries_04_08.tsv', row.names = F, quote = F, sep = '\t')
+
+
+```
+
+
+### Time on treatment
+
+The output for the num_cases function is:
+
+list(num_cases, num_cases_swap, episodes_ap, length_ap, ep_info, cases, fun_cases_edit, dataset)
+
+The 'cases' from this are all the people in a treatment episode at blood draw (before we take the 7 day swap for cases and controls). Use this for looking at time differences, as want to see how methylation changes at significant CpG sites with time on treatment.
+
+```{r all_cases}
+
+antidep_pheno1_cases_preswap <- antidep_stck_10lee[[6]]
+write.table(antidep_pheno1_cases_preswap, 'edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_ph1_cases_preswap.tsv', sep = '\t', row.names = F, quote = F)
+
+```
+
+Derive the people who have an antidepressant episode prior to the blood draw:
+
+```{r}
+antidep_episodes_all <- antidep_stck_10lee[[4]]
+
+# select all those who do not have an appointment in an episode 
+
+antidep_episodes_noap <- antidep_episodes_all %>% filter(appt_inep == FALSE)
+
+# select all episodes which end before the appointment 
+
+antidep_episodes_before_ap <- antidep_episodes_noap %>% filter(ep_end < appt)
+
+# for each individual find the episode which ends closest to the appointment date 
+# i.e the appointment date which is latest in time (as all these are filtered to before the appointment)
+
+antidep_episodes_closest <- antidep_episodes_before_ap %>% group_by(substitutionID) %>% filter(ep_end == max(ep_end)) %>% as.data.frame()
+
+write.table(antidep_episodes_closest, 'edavyson/Antidep_methylation/10_percent/all_antidep/antidep_episodes_prior_blooddraw.tsv', sep = '\t', row.names = F, quote = F)
+
+
+
+```
+
+## Supplementary Tables 
+
+```{r}
+
+###############
+# first 
+# info on antidepressant prescriptions pre parsing and filtering steps 
+
+write_xlsx(antidep_info, 'Year 2/Methylation_antidep_writing/supp_tables.xlsx')
+
+# load the excel file for adding sheets of other tables 
+supp_wb <- loadWorkbook('Year 2/Methylation_antidep_writing/supp_tables.xlsx')
+
+# second 
+# info on the antidepressant prescriptions post parsing and filtering steps 
+
+addWorksheet(supp_wb, "Antidep_presc_post_parsing")  
+writeData(supp_wb, "Antidep_presc_post_parsing", antidep_info_postparsing)
+
+# save the sheets 
+saveWorkbook(supp_wb, 'Year 2/Methylation_antidep_writing/supp_tables.xlsx', overwrite=T)
+
+
+
+
+```
+
+Run the MWAS using the same script as before : GRM_unadjusted_MOA_resid_ORM_update_06.sh
+
+
+

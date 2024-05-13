@@ -1,0 +1,2324 @@
+---
+title: "MWAS results 06/23 Update"
+author: "Ella Davyson"
+date: "2023-07-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=F, echo = F, suppre}
+library(tidyverse) # data manipulation
+library(dplyr) # data manipulation
+library(readr) # reading in files quicker
+library(ggrepel) #plotting
+library(ewascatalog) # querying CpGs in EWAS catalog
+library(BiocManager)
+#BiocManager::install("IlluminaHumanMethylationEPICanno.ilm10b4.hg19")
+library(IlluminaHumanMethylationEPICanno.ilm10b4.hg19) # CpG annotation
+library(venn) # venn diagrams
+library(rtracklayer) # creating tracks
+library(venndir) # venn diagrams
+library(missMethyl) # gene set testing
+library(openxlsx) # writing supp tables
+library(writexl) #""
+library(cowplot) #subplots
+library(gameofthrones) # plotting colors
+library(ggplot2) #plotting
+library(ggpubr) #plotting
+library(kableExtra) # tables
+library(biomaRt) # accessing snp and gene tracks
+library(ensembldb) # accessing snp and gene tracks
+library(coMET) # dmr graphs
+library(msigdbr) # GO gene sets
+
+
+```
+
+## MWAS models
+
+MOA model 
+
+Phenotype: GRM residualised phenotypes (lose a few people depending on whether they have genetic data available)
+
+Methylation Data: Standardised (OSCA --std-probe)
+Fixed covariates: Age, Sex, Lymphocyte count, Monocyte count, AHRR, Batch
+
+Random covariate: Omics-relatedness matrix (ORM)
+
+The results files are on datastore, connected via a VPN. 
+
+
+```{r functions, echo=F, echo=F,warning=F,error=F,message=F}
+#Functions for looking at results (taken from a previous results markdown GRM_uncor_res_11_05.Rmd)
+# manhattan plot function 
+# returns a Manhattan plot for an MWAS analysis
+MWAS_manhattan <- function(OSCA_results, plottitle, annot_level = 9.42e-08, zoom=FALSE, start_var=NULL, end_var = NULL, meta_analysis = 'no'){
+  
+  OSCA_results_format <- OSCA_results %>% 
+  #compute chromosome size 
+  group_by(Chr) %>%
+  reframe(chr_len = max(bp)) %>%
+  
+  #Calculate the cumulative position of each chromosome 
+  mutate(tot = cumsum(as.numeric(chr_len))-as.numeric(chr_len)) %>%
+  dplyr::select(-chr_len) %>%
+  
+  #add this info to the original data set of sum stats 
+  left_join(OSCA_results, ., by = c('Chr'='Chr')) %>%
+  
+  #add the cumulative position of each SNP 
+  arrange(Chr,bp) %>% 
+  mutate( BPcum = bp + tot)
+
+axisdf = OSCA_results_format %>% group_by(Chr) %>% reframe(center=(max(BPcum) +min(BPcum))/2)
+
+if (zoom == FALSE & meta_analysis == 'no') {
+OSCA_results_signif <- OSCA_results_format %>% dplyr::filter(p < annot_level)
+MWAS_plot <- ggplot(OSCA_results_format, aes(x = BPcum, y = -log10(p)))+geom_point(aes(color = as.factor(Chr)), alpha = ifelse(OSCA_results_format$p < annot_level, 1,0.8), size = 1.3) + 
+  scale_color_manual(values = rep(c("darkgray", "coral"), 22)) + 
+  #custom x axis 
+  
+  scale_x_continuous(label=axisdf$Chr, breaks= axisdf$center) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,max(-log10(OSCA_results$p))+2)) +
+  geom_text_repel(data = OSCA_results_signif, aes(label = Name))+
+  geom_hline(yintercept = -log10(9.42e-08), linetype = 'dashed') +
+  theme_bw() + theme(legend.position = "none", panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), plot.title= element_text(face = "bold", hjust = 0.5)) + 
+  labs(x = 'Chromosome', title = plottitle)
+} else if (zoom == TRUE & meta_analysis == 'no'){
+  OSCA_results_signif <- OSCA_results_format %>% dplyr::filter(p < annot_level)
+  MWAS_plot <- ggplot(OSCA_results_format, aes(x = BPcum, y = -log10(p)))+ geom_blank() +geom_rect(
+    xmin = start_var, xmax = end_var, 
+    ymin = -Inf, ymax = Inf, 
+    fill = "lightpink", alpha = 0.05)+geom_point(aes(color = as.factor(Chr)), alpha = ifelse(OSCA_results_format$p < annot_level, 0.8,0.6), size = 1.3) + 
+  scale_color_manual(values = rep(c("grey", "skyblue"), 22)) + 
+  
+  scale_y_continuous(expand = c(0,0), limits = c(0,max(-log10(OSCA_results$p))+2)) +
+  geom_text_repel(data = OSCA_results_signif, aes(label = Name))+
+  geom_hline(yintercept = -log10(annot_level), linetype = 'dashed') +
+  geom_hline(yintercept = -log10(annot_level/nrow(OSCA_results_format)), linetype = 'dotted', color = 'blue')+
+  theme_bw() + theme(legend.position = "none", panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), plot.title= element_text(face = "bold", hjust = 0.5)) + 
+  labs(x = 'Chromosome', title = plottitle)
+  
+} else if (zoom == FALSE & meta_analysis == 'yes') {
+  OSCA_results_signif <- OSCA_results_format %>% dplyr::filter(p < annot_level)
+MWAS_plot <- ggplot(OSCA_results_format, aes(x = BPcum, y = -log10(p), shape = study_presence))+geom_point(aes(color = as.factor(Chr)), alpha = ifelse(OSCA_results_format$p < annot_level, 1,0.8), size = 1.3) + 
+  scale_color_manual(values = rep(c("darkgray", "coral"), 22), guide = "none") + 
+  #custom x axis 
+  
+  scale_x_continuous(label=axisdf$Chr, breaks= axisdf$center) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,max(-log10(OSCA_results$p))+2)) +
+  geom_text_repel(data = OSCA_results_signif, aes(label = Name))+
+  geom_hline(yintercept = -log10(annot_level), linetype = 'dashed') +
+  theme_bw() + theme(panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), plot.title= element_text(face = "bold", hjust = 0.5)) + 
+  labs(x = 'Chromosome', title = plottitle) +
+  guides(shape = guide_legend(title = "CpG array")) 
+}
+
+return(MWAS_plot)
+}
+
+## MDD and all comparison function
+
+## returns a scatter plot of effect sizes in the MDD only and all analysis for CpGs which are significant in the main (all) analysis, and also returns a merged long format of the results for each CpG in each analysis 
+
+# res1 = results data (from all individuals)
+# res2 = results data (from MDD)
+# analysis 1 = suffix to add to columns denoting the analysis for res1
+# analysis 2 = suffix to add to columns denoting the analysis for res2
+# model = the model used in this analysis 
+# phenotype = the phenotype for results 1, in which the significant probes are plotted in the plot
+
+comp_plot <- function(res1, res2, analysis1, analysis2, model='LINEAR', phenotype, probes){
+   # add the analysis to the relevant column names for long format
+  print('Appending analysis to column names')
+  if (model == 'MOA') {
+  colnames(res1)[c(10,11,12)] <- paste0(colnames(res1)[c(10,11,12)], '_', analysis1)
+  colnames(res2)[c(10,11,12)] <- paste0(colnames(res2)[c(10,11,12)], '_', analysis2)
+  }
+  else {
+colnames(res1)[c(6,7,8,9)] <- paste0(colnames(res1)[c(6,7,8,9)], '_', analysis1)
+colnames(res2)[c(6,7,8, 9)] <- paste0(colnames(res2)[c(6,7,8,9)], '_', analysis2)
+  }
+  # merge them together 
+  print('Merging the results together')
+  results_mrg <- merge(res1, res2, by = c('Chr', 'Name', 'bp', 'Relation_to_Island', 'Islands_Name', 'UCSC_RefGene_Name', 'UCSC_RefGene_Accession', 'UCSC_RefGene_Group', 'GencodeCompV12_Accession') )
+print('Making long format')
+# making into long format
+results_long <- results_mrg %>% 
+  pivot_longer(-c(Chr, Name, bp, Relation_to_Island, Islands_Name, UCSC_RefGene_Name, UCSC_RefGene_Accession, UCSC_RefGene_Group, GencodeCompV12_Accession),
+               names_to = c(".value", "Analysis"), 
+               names_sep = "_") %>% as.data.frame()
+
+# add standard errors 
+print('Calculating standard errors')
+results_long <- results_long %>% mutate(lowSE = b - se, highSE = b + se) %>% mutate(highCI = b + (1.96*se), lowCI = b - (1.96*se))
+
+# subset the significant hits from the antidep_pheno1 (not subset to MDD)
+print('Plotting')
+res1_sig <- res1 %>% dplyr::filter(Name %in% probes)
+num_signif <- nrow(res1_sig)
+comp_plt <- ggplot(results_long %>% dplyr::filter(Name %in% res1_sig$Name), aes(
+  x = b, y = reorder(Name, b), color = Analysis, shape = p < 0.05/num_signif)) + 
+  geom_point(size = 2, position= position_dodge(width=0.5)) + 
+  geom_errorbarh(aes(xmin = lowCI, xmax = highCI), height = 0, position= position_dodge(width=0.5)) + 
+  theme_minimal() +
+  geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') +
+  scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD only')) + 
+  labs(y = 'CpG', x = 'Standardised Effect Size', title = paste0(
+         'Probes significant in the', phenotype, ' :\n', model), color = 'Phenotype')+guides(shape=guide_legend(title=paste0('p < 0.05/', num_signif)))
+
+return(list(comp_plt, results_long))
+}
+
+
+
+
+# EWAS query function 
+
+CPG_query <- function(cpg) {
+  result <- tryCatch({
+    query <- ewascatalog(cpg)
+    if (nrow(query) == 0) {
+      return(NA)
+    } else {
+      return(query)
+    }
+  }, error = function(e) {
+    return(NA)
+  })
+  return(result)
+}
+
+EWAS_query <- function(cpgs) {
+  ewas_catalog_df <- data.frame(cpg = 1:length(cpgs), cpg_traits = NA, gene = NA)
+  for (i in 1:length(cpgs)){
+  cpg_name <- cpgs[i]
+  print(cpg_name)
+  query_res <- CPG_query(cpg= cpg_name)
+  if (!is.data.frame(query_res)) {
+  ewas_catalog_df[i, 'cpg'] <- cpg_name
+
+  } else {
+  traits <- unique(query_res$trait)
+  gene <- unique(query_res$gene)
+  ewas_catalog_df[i, 'cpg'] <- cpg_name
+  ewas_catalog_df[i, 'cpg_traits'] <- paste(traits, collapse = ',')
+  ewas_catalog_df[i, 'gene'] <- paste(gene, collapse = ',')
+  }
+  }
+  return(ewas_catalog_df)
+}
+
+#### annotating CpGs 
+
+
+annot <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b4.hg19) %>% as.data.frame()
+
+annot_rel <- annot %>% dplyr::select(Name, Relation_to_Island, Islands_Name, UCSC_RefGene_Name, UCSC_RefGene_Accession, UCSC_RefGene_Group, GencodeCompV12_Accession)
+
+```
+
+### Self report phenotype 
+
+
+```{r}
+selfrep_ph3_res <- read_table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/GRM_unadjusted_selfrep_pheno3_MOA_ORM_residph_standard_06_10.moa') %>% as.data.frame()
+
+# annotate the CpG which was unannotated from GRM_corrected.opi file
+
+selfrep_ph3_res[selfrep_ph3_res$Probe == 'cg07023494', 'Chr'] <- 7
+selfrep_ph3_res[selfrep_ph3_res$Probe == 'cg07023494', 'bp'] <- 158965466
+selfrep_ph3_res <- selfrep_ph3_res %>% dplyr::rename(Name = Probe)
+MWAS_manhattan(selfrep_ph3_res, 'Self report antidepressant exposure')
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/selfrep_MWAS.png', plot = MWAS_manhattan(selfrep_ph3_res, 'Self report antidepressant exposure') , width = 8, height = 6, device='png', dpi=300)
+
+
+selfrep_ph3_res <- merge(annot_rel, selfrep_ph3_res, by= 'Name') %>% dplyr::select(-c(Gene, Orientation))
+
+# filter the significant results for the results write up 
+
+selfrep_ph3_res %>% dplyr::filter(p < 9.42e-08) %>% arrange(p) %>% View()
+
+# save the probe names to extract the methylation data from the OSCA file 
+readr::write_lines(selfrep_ph3_res %>% filter(p < 9.42e-08) %>% arrange(p) %>% pull(Name), 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/20_10_standardised_update/selfrep_signif_probes_10.txt')
+
+     
+```
+
+#### EWAS catalog 
+
+```{r}
+# EWAS query function 
+
+CPG_query <- function(cpg) {
+  result <- tryCatch({
+    query <- ewascatalog(cpg)
+    if (nrow(query) == 0) {
+      return(NA)
+    } else {
+      return(query)
+    }
+  }, error = function(e) {
+    return(NA)
+  })
+  return(result)
+}
+
+EWAS_query <- function(cpgs) {
+  ewas_catalog_df <- data.frame(cpg = 1:length(cpgs), cpg_traits = NA, gene = NA, pmid = NA, trait_pmid = NA)
+  for (i in 1:length(cpgs)){
+  cpg_name <- cpgs[i]
+  print(cpg_name)
+  query_res <- CPG_query(cpg= cpg_name)
+  if (all(is.na(query_res))|| !is.data.frame(query_res)) {
+  ewas_catalog_df[i, 'cpg'] <- cpg_name
+
+  } else {
+    # filter so looking at studies of > 1000 people and order by 
+  query_res <- query_res %>% dplyr::filter(n > 1000) %>% group_by(trait) %>% dplyr::arrange(desc(n)) %>% dplyr::slice(1:1) %>% as.data.frame()
+  traits <- unique(query_res$trait)
+  genes <- unique(query_res$gene) 
+  PMIDs <- query_res %>% dplyr::filter(trait %in% traits) %>% pull(pmid)
+  combined <- paste(traits, " (", PMIDs, ")", sep = "")
+  ewas_catalog_df[i, 'cpg'] <- cpg_name
+  ewas_catalog_df[i, 'cpg_traits'] <- paste(traits, collapse = ',\n')
+  ewas_catalog_df[i, 'gene'] <- paste(genes, collapse = ',')
+  ewas_catalog_df[i, 'pmid'] <- paste(PMIDs, collapse = ':')
+  ewas_catalog_df[i, 'trait_pmid'] <- paste(combined, collapse = ' : ')
+  
+  }
+  }
+  return(ewas_catalog_df)
+}
+
+probes <- c(selfrep_ph3_res %>% dplyr::filter(p< 9.42e-08) %>% dplyr::pull(Name), "cg01964004")
+selfrep_signif_info <- list()
+for (i in 1:length(probes)){
+  cpg <- probes[i]
+  cpg_query <- EWAS_query(cpg)
+  selfrep_signif_info[[i]] <- cpg_query
+}
+
+selfrep_signif_info_df <- do.call(rbind, selfrep_signif_info)
+selfrep_signif_info_df <- selfrep_signif_info_df %>% dplyr::select(cpg, gene)
+
+# merge with the beta and p value info 
+# Table 2 in the paper for self-report 
+selfrep_signif_info_df <- merge(selfrep_signif_info_df, selfrep_ph3_res %>% dplyr::filter(Name %in% probes) %>% dplyr::select(Name, Chr, bp, b, se, p), by.x = 'cpg', by.y = 'Name') 
+
+selfrep_signif_info_df <- selfrep_signif_info_df %>% 
+  mutate(b = signif(b,3), se = signif(se, 3), p = signif(p, 3)) %>%
+  arrange(p) %>% 
+  dplyr::select(cpg, Chr, bp, gene,b, se, p, trait_pmid) %>% 
+  dplyr::rename(Name = cpg, BP = bp, Gene = gene, Beta= b, SE = se, `Other traits associated with the CpG` = trait_pmid)
+
+## put this as a page in a supplementary tables excel file : 
+
+write.csv(selfrep_signif_info_df, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/selfrep_signif_probes_info_10_update.csv', quote = F, row.names = F)
+```
+
+#### Extracting methylation data for probes 
+
+Copy this file to scratch space 
+
+```{bash}
+cd scratch/s2112198
+module load igmm/apps/osca/0.46
+osca --befile mvals_GRM_uncorrected_29_06_OSCA_standard --extract-probe selfrep_signif_probes_10.txt --make-efile --out selfrep_probes_meth_10
+
+```
+
+Copy the output file back to datastore 
+
+
+```{r}
+# read in the probes 
+selfrep_probes_meth <- read.table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/20_10_standardised_update/selfrep_probes_meth_10', header = T)
+
+# read in the selfrep_phenotype file 
+# before residualising
+
+selfrep_pheno3 <- read_csv('edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3.csv') %>% as.data.frame() 
+
+selfrep_pheno4 <-  read_csv('edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_MDD_pheno4_methyl_03_05.csv') %>% as.data.frame() 
+
+# merge with the methylation file 
+
+selfrep_pheno3_meth <- merge(selfrep_probes_meth , selfrep_pheno3, by = 'IID')
+
+
+data_summary <- function(x) {
+  m <- mean(x)
+  ymin <- m -sd(x)
+  ymax <- m + sd(x)
+  return(c(y=m, ymin = ymin, ymax = ymax))
+}
+
+probe_violins <- function(data, cpg, mwas_results) {
+  cpg_MWAS_results <- mwas_results %>% dplyr::filter(Name == cpg)
+  plot <- ggplot(data, aes(x = as.factor(antidep), y = !!rlang::sym(cpg), color = as.factor(antidep), fill = as.factor(antidep)))+ 
+    geom_violin(trim = FALSE, na.rm = TRUE, alpha= 0.3)+
+    scale_color_brewer(palette = "Dark2", aesthetics= c("colour", "fill"),name = "Phenotype")+ 
+    theme_classic()+geom_jitter(shape = 16, position=position_jitter(0.2), na.rm = TRUE)+stat_summary(fun.data =data_summary, shape = 23, color = "black", na.rm = TRUE) +
+    labs(title = paste0(cpg) ,x = '', y="M value") + theme(legend.position= "none", text = element_text(size = 15), plot.title= element_text(face = "bold", hjust = 0.5))+
+    scale_x_discrete(labels = c("Unexposed", "Exposed")) + ylim(min(data[,cpg]), max(data[,cpg] + 2*sd(data[,cpg]))) 
+  plot <- plot + annotate("text", x = 1.5, y =max(plot$data[,cpg]) + 2*sd(plot$data[,cpg]), label = paste0("b: ", signif(cpg_MWAS_results$b, 3))) + annotate("text", x = 1.5, y =max(plot$data[,cpg])+ sd(plot$data[,cpg]), label = paste0("p : ", signif(cpg_MWAS_results$p, 3)))
+  return(plot)
+}
+
+test_plot <- ggplot(selfrep_pheno3_meth[!(is.na(selfrep_pheno3_meth$antidep)),], aes(x = as.factor(antidep), y = !!rlang::sym(colnames(selfrep_pheno3_meth)[3]), color = as.factor(antidep), fill = as.factor(antidep)))+ 
+    geom_violin(trim = FALSE, na.rm = TRUE, alpha= 0.3)+
+    scale_color_brewer(palette = "Dark2", aesthetics= c("colour", "fill"),name = "Phenotype")+ 
+    theme_classic()+geom_jitter(shape = 16, position=position_jitter(0.2), na.rm = TRUE)+stat_summary(fun.data =data_summary, shape = 23, color = "black", na.rm = TRUE) +
+    labs(title = paste0(cpg) ,x = '', y="M value") + theme(legend.position= "none", text = element_text(size = 15), plot.title= element_text(face = "bold", hjust = 0.5))+
+    scale_x_discrete(labels = c("Controls", "Cases"))
+
+
+selfrep_cpg_violins <- list()
+for (i in 1:length(colnames(selfrep_pheno3_meth)[3:9])){
+  cpg <- colnames(selfrep_pheno3_meth)[i+2]
+  selfrep_cpg_violins[[i]] <- probe_violins(selfrep_pheno3_meth[!(is.na(selfrep_pheno3_meth$antidep)),], cpg, selfrep_ph3_res)
+}
+
+selfrep_cpg_plots <- ggarrange(plotlist=selfrep_cpg_violins)
+
+# save this figure to go into the supplementary information 
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/selfrep_signif_cpg_plots.png', plot = selfrep_cpg_plots, width = 8, height = 10, device='png', dpi=300)
+
+
+```
+#### Self-report ONLY 
+
+The MWAS analysis was run on a subset of the self-reported phenotype who did not have a prescription derived measure (self-reported phenotype from before 04-2009 so pre prescription-linkage)
+
+```{r}
+selfrep_ph3_only_res <- read_table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/GRM_unadjusted_selfrep_pheno3_indep_MOA_ORM_residph_standard_06_10.moa') %>% as.data.frame()
+
+selfrep_ph3_only_res[selfrep_ph3_only_res$Probe == 'cg07023494', 'Chr'] <- 7
+selfrep_ph3_only_res[selfrep_ph3_only_res$Probe == 'cg07023494', 'bp'] <- 158965466
+selfrep_ph3_only_res <- selfrep_ph3_only_res %>% rename(Name = Probe)
+
+MWAS_manhattan(selfrep_ph3_only_res, 'Self report antidepressant exposure ONLY (N = 7, 827)', annot_level = 1e-05)
+
+selfrep_ph3_only_res %>% arrange(p) %>% head()
+
+selfrep_ph3_only_res <- merge(annot_rel, selfrep_ph3_only_res, by= 'Name') %>% dplyr::select(-c(Gene, Orientation))
+
+# read in the actual phenotype 
+
+selfrep_ph3_only <- read.csv('edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3_indep.csv', header = T)
+
+table(selfrep_ph3_only$antidep, useNA = 'always')
+
+selfrep_all_subset <- comp_plot(selfrep_ph3_res, selfrep_ph3_only_res, analysis1 = 'selfreppheno3ALL', analysis2 = 'selfreppheno3indepsubset', model = 'MOA',phenotype = 'Self-report MWAS')
+
+
+ggplot(selfrep_all_subset[[2]] %>% pivot_wider(names_from = Analysis, values_from = c('b', 'se', 'p', 'lowSE', 'highSE', 'lowCI', 'highCI') ),
+       aes(x = b_selfreppheno3ALL, y = b_selfreppheno3indepsubset)) + stat_density_2d(aes(fill = ..level..), geom = "polygon") + labs(x = 'Self Report Full Sample : Beta', y = 'Self Report Independent Sample : Beta') + theme_minimal()
+ 
+
+ggplot(selfrep_all_subset[[2]] %>% dplyr::filter(Name %in% colnames(selfrep_pheno3_meth)[3:9]), aes( x= b, y = reorder(Name, b), color = Analysis)) + geom_point(size = 2, position = position_dodge(width = 0.5)) +
+  geom_errorbarh(aes(xmin = lowCI, xmax = highCI), height = 0, position = position_dodge(width = 0.5)) + theme_minimal() +   geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') +
+  scale_color_got_d(option = 'Margaery', labels = c('All', 'Independant subset')) + 
+  labs(y = 'CpG', x = 'Standardised Effect size', title = 
+         'Probes significant in the self report full sample: MOA model', color = 'Phenotype')
+
+
+
+```
+
+#### MDD only 
+
+```{r}
+selfrep_ph4_res <- read_table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/GRM_unadjusted_selfrep_pheno4_MOA_ORM_residph_standard_06_10.moa') %>% as.data.frame()
+
+selfrep_ph4_res[selfrep_ph4_res$Probe == 'cg07023494', 'Chr'] <- 7
+selfrep_ph4_res[selfrep_ph4_res$Probe == 'cg07023494', 'bp'] <- 158965466
+selfrep_ph4_res <- selfrep_ph4_res %>% dplyr::rename(Name = Probe)
+selfrep_ph4_signif_info <- list()
+for (i in 1:length(selfrep_ph4_res %>% dplyr::filter(p < 9.42e-08) %>% pull(Name))){
+  cpg <- (selfrep_ph4_res %>% dplyr::filter(p < 9.42e-08) %>% pull(Name))[i]
+  cpg_query <- EWAS_query(cpg)
+  selfrep_ph4_signif_info[[i]] <- cpg_query
+}
+
+
+selfrep_ph4_signif_info_df <- do.call(rbind, selfrep_ph4_signif_info)
+# no EWAS hits for the CpG - don't include in table 
+
+
+selfrep_ph4_res <- merge(annot_rel, selfrep_ph4_res, by= 'Name') %>% dplyr::select(-c(Gene, Orientation))
+
+selfrep_GRMORM_update <- comp_plot(selfrep_ph3_res, selfrep_ph4_res, analysis1 = 'selfreppheno3ORMMOA', analysis2 = 'selfreppheno4ORMMOA', model = 'MOA',phenotype = 'Self-report MWAS', probes = selfrep_signif_info_df$Name)
+
+selfrep_GRMORM_update[[1]] + theme(legend.position = 'top') + scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD'))
+
+
+selfrep_GRMORM_update_wide <- selfrep_GRMORM_update[[2]] %>% pivot_wider(id_cols = c(Name, Chr, bp,  Relation_to_Island, Islands_Name, UCSC_RefGene_Name, UCSC_RefGene_Accession, UCSC_RefGene_Group,GencodeCompV12_Accession), 
+                                         names_from=Analysis,
+                                         values_from = c(b, se, p, lowSE, highSE, lowCI, highCI), names_sep = '_')
+
+
+selfrep_GRMORM_update_beta_cor <- ggplot(selfrep_GRMORM_update_wide, aes(x = b_selfreppheno3ORMMOA, y = b_selfreppheno4ORMMOA)) + geom_point(alpha = 0.6)+geom_abline(slope = 1, intercept = 0, color = 'red', linetype = 'dashed') + stat_cor()+ theme_minimal() + theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+ggtitle('Self-report MWAS') + xlim(-0.15, 0.25) + ylim(-0.15, 0.25) + labs(x = 'CpG effects: All (n = 16, 536)', y = 'CpG effects: MDD only (n = 2, 268)')
+
+
+selfrep_pheno4_manhat <- MWAS_manhattan(selfrep_ph4_res, 'Self-report MDD only (N = 2, 268)')
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/selfrep_pheno4_MDD.png', plot = selfrep_pheno4_manhat , width = 8, height = 6, device='png', dpi=300)
+
+# select the CpGs significant in the selfrep_pheno3 analysis and extract the results for selfrep_pheno4
+selfrep_GRMORM_update_wide %>% dplyr::filter(p_selfreppheno3ORMMOA < 9.42e-08) %>% dplyr::select(Name, Chr, bp, b_selfreppheno4ORMMOA, p_selfreppheno4ORMMOA) %>% pull(b_selfreppheno4ORMMOA) %>% range()
+
+# calculate fold change in self rep
+# first establish how many are in concordant directions? 
+
+selfrep_GRMORM_update_wide <- selfrep_GRMORM_update_wide %>% mutate(concor = ifelse(b_selfreppheno3ORMMOA * b_selfreppheno4ORMMOA > 0, TRUE, FALSE))
+
+# how many of them are in a concordant direction ? 
+table(selfrep_GRMORM_update_wide$concor)
+
+# look at the range of values in those in a concordant direction vs those who are not 
+
+selfrep_GRMORM_update_wide %>% group_by(concor) %>% summarise(selfrep3_min = min(b_selfreppheno3ORMMOA), selfrep3_max = max(b_selfreppheno3ORMMOA), selfrep4_min= min(b_selfreppheno4ORMMOA), selfrep4_max= min(b_selfreppheno4ORMMOA))
+
+# those which are concordant have a wider range of beta values (i.e larger beta values) # plot a density ? 
+
+selfrep_fc <- selfrep_GRMORM_update_wide %>% dplyr::select(Name, b_selfreppheno3ORMMOA, b_selfreppheno4ORMMOA) %>% mutate(fold_change = abs(b_selfreppheno4ORMMOA) / abs(b_selfreppheno3ORMMOA))
+
+mean(selfrep_fc$fold_change)
+
+# supplementary table of the MDD only results 
+selfrep_ph4_signif_supp <- selfrep_ph4_res %>% dplyr::filter(p < 9.42e-08) %>% dplyr::select(Name, Chr, bp, b, se, p, UCSC_RefGene_Name, UCSC_RefGene_Accession, Relation_to_Island, Islands_Name,UCSC_RefGene_Group, GencodeCompV12_Accession) %>% mutate(`Other traits associated with the CpG` = NA)
+
+
+```
+
+
+
+
+#### Prescription Derived Clean Phenotype
+
+I.e the controls with their appointment date after the prescription data linkage 
+
+N cases = 861
+N controls = 7090
+
+Total (n = 7951)
+
+```{r clean_antidep_all}
+
+anti_ph1_clean_res <- read_table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/GRM_unadjusted_antidep_pheno1_clean_appt_MOA_ORM_residph_standard_06_10.moa') %>% as.data.frame()
+
+anti_ph1_clean_res[anti_ph1_clean_res$Probe == 'cg07023494', 'Chr'] <- 7
+anti_ph1_clean_res[anti_ph1_clean_res$Probe == 'cg07023494', 'bp'] <- 158965466
+
+anti_ph1_clean_res <- anti_ph1_clean_res %>% dplyr::rename(Name = Probe)
+
+
+anti_ph1_clean_appt_res <- merge(annot_rel, anti_ph1_clean_res, by= 'Name') %>% dplyr::select(-c(Gene, Orientation))
+
+MWAS_manhattan(anti_ph1_clean_res, 'Prescription derived antidepressant exposure phenotype')
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/antidep_pheno1_MWAS.png', plot = MWAS_manhattan(anti_ph1_clean_res, 'Prescription derived antidepressant exposure phenotype')
+, width = 8, height = 6, device='png', dpi=300)
+
+# EWAS catalog 
+antidep_cln_signif_info <- list()
+# edited to extract info for all the self-reported probes AND the extra one which is pulled by the prescription-derived results
+probes <- c(selfrep_signif_info_df$Name, "cg01964004")
+for (i in 1:length(probes)){
+  cpg <- probes[i]
+  print(cpg)
+  cpg_query <- EWAS_query(cpg)
+  antidep_cln_signif_info[[i]] <- cpg_query
+}
+
+antidep_cln_signif_info_df <- do.call(rbind, antidep_cln_signif_info)
+antidep_cln_signif_info_df <- antidep_cln_signif_info_df %>% dplyr::select(cpg, gene, trait_pmid)
+
+# merge with the beta and p value info 
+
+antidep_cln_signif_info_df <- merge(antidep_cln_signif_info_df, anti_ph1_clean_res %>% dplyr::filter(Name %in% probes) %>% dplyr::select(Name, Chr, bp, b, se, p), by.x = 'cpg', by.y = 'Name') 
+
+antidep_cln_signif_info_df <- antidep_cln_signif_info_df %>% 
+  mutate(b = signif(b,3), se = signif(se, 3), p = signif(p, 3)) %>%
+  arrange(p) %>% 
+  dplyr::select(cpg, Chr, bp, gene,b, se, p, trait_pmid) %>% 
+  dplyr::rename(Probe = cpg, BP = bp, Gene = gene, Beta= b, SE = se, `Other traits associated with the CpG` = trait_pmid)
+
+anti_ph1_signif_supp <- merge(anti_ph1_clean_appt_res %>% dplyr::filter(p < 9.42e-08), antidep_cln_signif_info_df %>% dplyr::select(Probe, `Other traits associated with the CpG`), by.x = 'Name', by.y = 'Probe') %>% dplyr::select(Name, Chr, bp, b, se, p, UCSC_RefGene_Name, UCSC_RefGene_Accession, Relation_to_Island, Islands_Name,UCSC_RefGene_Group,  `Other traits associated with the CpG`)
+
+
+
+```
+
+Table 2 - Manuscript
+
+```{r}
+#selfrep_signif_info_df 
+#antidep_cln_signif_info_df
+
+selfrep_signif_info_df <- selfrep_signif_info_df %>% dplyr::rename(Beta_selfrep = Beta, SE_selfrep = SE, p_selfrep = p)
+antidep_cln_signif_info_df <- antidep_cln_signif_info_df %>% dplyr::rename(Beta_prescrip = Beta, SE_prescrip = SE, p_prescrip = p)
+
+table2 <- merge(selfrep_signif_info_df, antidep_cln_signif_info_df %>% dplyr::select(-c(Chr, BP, Gene, `Other traits associated with the CpG`)), by = c('Name'))
+table2 <- table2 %>% mutate(
+  significant = case_when(p_selfrep < 9.42e-08 & p_prescrip < 9.42e-08 ~ 'Both',
+                          p_selfrep < 9.42e-08 & p_prescrip > 9.42e-08 ~ 'Self-report only',
+                          p_selfrep > 9.42e-08 & p_prescrip < 9.42e-08 ~ 'Prescription-derived only',
+                          TRUE ~ "Something is wrong...")
+)
+table2 <- merge(table2 %>% dplyr::select(-Gene), annot_rel %>% dplyr::select(c(Name, UCSC_RefGene_Name)), by = 'Name')
+write.csv(table2, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/MAR24_circulate/ED_AD_DNAm_manuscript/Returned_edits/table2_update.csv', row.names = F, quote = F)
+```
+
+MDD only prescription-derived phenotype 
+
+```{r}
+
+anti_ph2_clean_res <- read_table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/GRM_unadjusted_antidep_pheno2_clean_appt_MOA_ORM_residph_standard_06_10.moa') %>% as.data.frame()
+
+anti_ph2_clean_res[anti_ph2_clean_res$Probe == 'cg07023494', 'Chr'] <- 7
+
+anti_ph2_clean_res[anti_ph2_clean_res$Probe == 'cg07023494', 'bp'] <- 158965466
+anti_ph2_clean_res <- anti_ph2_clean_res %>% dplyr::rename(Name = Probe)
+
+anti_ph2_clean_res <- merge(annot_rel, anti_ph2_clean_res, by = 'Name') %>% dplyr::select(-c(Gene, Orientation))
+
+antidep_GRMORM_clean_update <- comp_plot(anti_ph1_clean_appt_res , anti_ph2_clean_res, analysis1 = 'antideppheno1ORMMOA', analysis2 = 'antideppheno2ORMMOA', model = 'MOA', phenotype= 'Prescription derived MWAS', probes = selfrep_signif_info_df$Name)
+
+antidep_GRMORM_clean_update[[1]] + theme(legend.position = 'top') + scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD'))
+
+antidep_GRMORM_c_update_wide <- antidep_GRMORM_clean_update[[2]] %>% pivot_wider(id_cols = c(Name, Chr, bp,Relation_to_Island, Islands_Name, UCSC_RefGene_Name, UCSC_RefGene_Accession, UCSC_RefGene_Group), 
+                                         names_from=Analysis,
+                                         values_from = c(b, se, p, lowSE, highSE, lowCI, highCI), names_sep = '_')
+
+antidep_GRMORM_c_update_beta_cor <- ggplot(antidep_GRMORM_c_update_wide, aes(x = b_antideppheno1ORMMOA, y = b_antideppheno2ORMMOA)) + geom_point(alpha = 0.6)+geom_abline(slope = 1, intercept = 0, color = 'red', linetype = 'dashed') + stat_cor()+ theme_minimal() + theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+ggtitle('Prescription-derived MWAS') +xlim(-0.45, 0.45) + ylim(-0.45, 0.45) + labs(x = 'CpG effects: All (n = 7, 951)', y='CpG effects: MDD only (n = 792)')
+
+antidep_pheno2_manhat <- MWAS_manhattan(anti_ph2_clean_res, 'Prescription derived MDD only (N = 792)')
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/antidep_pheno2_MDD.png', plot = antidep_pheno2_manhat, width = 8, height = 6, device='png', dpi=300)
+
+# range for results 
+
+anti_ph2_clean_res %>% pull(b) %>% range()
+anti_ph2_clean_res %>% pull(p) %>% range()
+
+
+# calculate how many CpGs have a concordant direction of effect for the MDD only and all analysis 
+
+antidep_GRMORM_c_update_wide <- antidep_GRMORM_c_update_wide %>% mutate(concor=ifelse(b_antideppheno1ORMMOA* b_antideppheno2ORMMOA > 0, TRUE, FALSE))
+
+table(antidep_GRMORM_c_update_wide$concor)
+
+antidep_GRMORM_clean_update[[2]] <- merge(antidep_GRMORM_clean_update[[2]], antidep_GRMORM_c_update_wide %>% dplyr::select(Name, concor), by = 'Name', all.x = TRUE)
+
+ggplot(antidep_GRMORM_clean_update[[2]] %>% mutate(Condition = ifelse(concor == TRUE, 'Concordant', 'Discordant'), analysis_label = ifelse(Analysis == 'antideppheno1ORMMOA', 'All', 'MDD-only')), aes(x = b)) + geom_histogram(alpha = 0.6) + theme_minimal() + labs(y = 'Count', x = 'Effect estimate')+ facet_wrap(analysis_label ~ Condition)
+
+# calculate the average fold increase of b for the MDD only analysis from the MDD agnostic analysis 
+
+antidep_fc <- antidep_GRMORM_c_update_wide %>% dplyr::filter(concor == TRUE) %>% dplyr::select(Name, b_antideppheno1ORMMOA, b_antideppheno2ORMMOA) %>% mutate(fold_change = abs(b_antideppheno2ORMMOA) / abs(b_antideppheno1ORMMOA))
+
+mean(antidep_fc$fold_change)
+
+hist(antidep_fc$fold_change)
+
+# get the significant CpGs 
+readr::write_lines(anti_ph1_clean_res %>% filter(p < 9.42e-08) %>% arrange(p) %>% pull(Name), 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/20_10_standardised_update/antidep_pheno1_signif_probes_10.txt')
+```
+
+##### Extracting methylation data 
+
+Copy this file to the scratch space 
+
+```{bash}
+
+cd scratch/s2112198
+module load igmm/apps/osca/0.46
+
+osca --befile mvals_GRM_uncorrected_29_06_OSCA_standard --extract-probe antidep_pheno1_signif_probes_10.txt --make-efile --out antidep_pheno1_probes_meth_10
+
+```
+
+Copy the output files to datastore to read in 
+
+```{r}
+
+# read in the phenotype file 
+GRM_ids <- read.table('edavyson/Antidep_methylation/antidep_phenotypes/QCdGS20K.grm.id', header = F)
+colnames(GRM_ids)[1] <- 'FID'
+colnames(GRM_ids)[2] <- 'IID'
+antidep_pheno1_pheno <- read.csv('edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_clean_appt.csv', header = T)
+
+antidep_pheno1_meth <- read.table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/20_10_standardised_update/antidep_pheno1_probes_meth_10', header = T)
+
+# (those with GRM - as these are the only ones used in the MWAS as residualised the phenotype against the GRM)
+
+antidep_pheno1_pheno <- merge(antidep_pheno1_pheno, GRM_ids %>% dplyr::select(-FID), by = 'IID')
+
+# merge with the methylation file 
+
+antidep_pheno1_meth <- merge(antidep_pheno1_meth , antidep_pheno1_pheno %>% dplyr::select(-FID) , by = 'IID')
+
+antidep_pheno1_meth <- antidep_pheno1_meth %>% dplyr::rename(antidep = antidep_pheno1)
+
+antidep_cpg_violins <- list()
+for (i in 1:length(colnames(antidep_pheno1_meth)[3:6])){
+  cpg <- colnames(antidep_pheno1_meth)[i+2]
+  antidep_cpg_violins[[i]] <- probe_violins(antidep_pheno1_meth[!(is.na(antidep_pheno1_meth$antidep)),], cpg, anti_ph1_clean_res)
+}
+
+antidep_cpg_plots <- ggarrange(plotlist=antidep_cpg_violins)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/antidep_signif_cpg_plots.png', plot = antidep_cpg_plots, width = 8, height = 6, device='png', dpi=300)
+
+
+
+
+```
+
+
+
+
+### Paper plots 
+
+```{r}
+MWAS_plots <- ggarrange(MWAS_manhattan(selfrep_ph3_res, 'Self report (N = 16, 536)'), MWAS_manhattan(anti_ph1_clean_res, 'Prescription derived (N = 7, 951)'), nrow = 2, ncol = 1)
+
+
+MWAS_plots
+
+# saved from the export button ^ 
+
+MWAS_MDD_plots <- ggarrange(MWAS_manhattan(selfrep_ph4_res, 'Self report: MDD only (N = 2, 268)'), MWAS_manhattan(anti_ph2_clean_res, 'Prescription derived: MDD only (N = 792)'), nrow = 2, ncol = 1)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/MWAS_plots_MDD_10_update.png', plot = MWAS_MDD_plots , width = 8, height = 6, device='png', dpi=300)
+
+
+# the correlation plots 
+beta_corr_plots <- ggarrange( antidep_GRMORM_c_update_beta_cor,selfrep_GRMORM_update_beta_cor, ncol =2, nrow = 1) 
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/CpG_beta_corr_both_10_update.png', plot = beta_corr_plots , width = 8, height = 6, device='png', dpi=300)
+
+## CpG point effect graphs 
+
+antidep_GRMORM_clean_update[[1]] + theme(legend.position = 'top') + scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD only'))
+
+selfrep_GRMORM_update[[1]] + theme(legend.position = 'top') + scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD only'))
+
+cpg_effect_points_both <- ggarrange(antidep_GRMORM_clean_update[[1]] + theme(legend.position = 'top') + scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD only')), 
+          selfrep_GRMORM_update[[1]] + theme(legend.position = 'top') + scale_color_got_d(option = 'Margaery', labels = c('All', 'MDD only')), ncol = 2, nrow = 1)
+
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/effect_points_both_10_update.png', plot = 
+cpg_effect_points_both, width = 8, height = 6, device='png', dpi=300)
+ ## all in one ? 
+
+effects_all_wide <- merge(selfrep_GRMORM_update_wide %>% dplyr::select(Name, b_selfreppheno3ORMMOA, b_selfreppheno4ORMMOA, lowCI_selfreppheno3ORMMOA, lowCI_selfreppheno4ORMMOA, highCI_selfreppheno3ORMMOA, highCI_selfreppheno4ORMMOA, p_selfreppheno3ORMMOA, p_selfreppheno4ORMMOA), antidep_GRMORM_c_update_wide %>% dplyr::select(Name, b_antideppheno1ORMMOA, b_antideppheno2ORMMOA, lowCI_antideppheno1ORMMOA, lowCI_antideppheno2ORMMOA, highCI_antideppheno1ORMMOA, highCI_antideppheno2ORMMOA, p_antideppheno1ORMMOA, p_antideppheno2ORMMOA), by= 'Name')
+
+
+
+effects_all <- effects_all_wide %>%
+    pivot_longer(cols = -Name,
+                 names_to = c(".value", "analysis"),
+                 names_pattern = "(\\w+)_(\\w+)") %>% as.data.frame()
+
+## just plot the significant self rep ones 
+
+selfrep_ph3_signif_probes <- selfrep_ph3_res %>% dplyr::filter(p < 9.42e-08) %>% pull(Name)
+
+effects_all <- effects_all %>% mutate(pheno = case_when(startsWith(analysis, "selfrep")~ "Self-report", TRUE ~ "Prescription-derived"), sample = case_when(grepl("pheno1|pheno3",analysis)~ "All", TRUE ~ "MDD only"))
+all_effects_plt <- ggplot(effects_all %>% dplyr::filter(Name %in% selfrep_signif_info_df$Name), aes(
+  x = b, y = reorder(Name, b), color = analysis)) + 
+  geom_point(size = 2, position= position_dodge(width=0.5)) + 
+  geom_errorbarh(aes(xmin = lowCI, xmax = highCI), height = 0, position= position_dodge(width=0.5)) + 
+  theme_minimal() +
+  geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') +
+  scale_color_got_d(option = 'Margaery', labels = c('Prescription', 'Prescription: MDD only', 'Self Report', 'Self Report: MDD only')) + 
+  labs(y = 'CpG', x = 'Standardised Effect size', title = '', color = '')+theme(legend.position="top", legend.text = element_text(size=12))
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/effect_points_all_10_update.png', plot = 
+all_effects_plt, width = 8, height = 6, device='png', dpi=300)
+
+effect_subplots <- ggplot(effects_all %>% dplyr::filter(Name %in% selfrep_signif_info_df$Name), aes(
+    x = b, y = reorder(Name, b), color = pheno)) + 
+    geom_point(size = 2, position= position_dodge(width=0.5)) + 
+    geom_errorbarh(aes(xmin = lowCI, xmax = highCI), height = 0, position= position_dodge(width=0.5)) + 
+    theme_minimal() +
+    geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') +
+    scale_color_got_d(option = 'Tyrell') + 
+    labs(y = 'CpG', x = 'Standardised Effect Size', title = '', color = '')+theme(legend.position="top", legend.text = element_text(size=12)) + facet_wrap(~sample) + theme(strip.text = element_text(size = 13))
+
+effect_subplots_mdd_all <- ggplot(effects_all %>% dplyr::filter(Name %in% selfrep_signif_info_df$Name), aes(
+    x = b, y = reorder(Name, b), color = sample)) + 
+    geom_point(size = 2, position= position_dodge(width=0.5)) + 
+    geom_errorbarh(aes(xmin = lowCI, xmax = highCI), height = 0, position= position_dodge(width=0.5)) + 
+    theme_minimal() +
+    geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') +
+    scale_color_got_d(option = 'Tyrell') + 
+    labs(y = 'CpG', x = 'Standardised Effect Size', title = '', color = '')+theme(legend.position="top", legend.text = element_text(size=12)) + facet_wrap(~pheno) + theme(strip.text = element_text(size = 13))
+
+# would the manhattan plots and this go into one figure? 
+# saved from the export button
+paper_fig1 <- ggarrange(MWAS_manhattan(selfrep_ph3_res, 'Self-report (N = 16, 536)'), MWAS_manhattan(anti_ph1_clean_appt_res, 'Prescription-derived (N = 7, 951)'), all_effects_plt,
+          nrow = 3, ncol = 1, labels = c('A', 'B', 'C'))
+
+paper_fig1_subplots <- ggarrange(MWAS_manhattan(selfrep_ph3_res, 'Self-report (N = 16, 536)'), MWAS_manhattan(anti_ph1_clean_appt_res, 'Prescription-derived (N = 7, 951)'), effect_subplots,
+          nrow = 3, ncol = 1, labels = c('A', 'B', 'C'))
+
+paper_fig1_subplots_mdd <- ggarrange(MWAS_manhattan(selfrep_ph3_res, 'Self-report (N = 16, 536)'), MWAS_manhattan(anti_ph1_clean_appt_res, 'Prescription-derived (N = 7, 951)'), effect_subplots_mdd_all,
+          nrow = 3, ncol = 1, labels = c('A', 'B', 'C'))
+
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/effect_points_all.png', plot = 
+paper_fig1, width = 210, height = 297, units = 'mm', device='png', dpi=300)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/effect_points_all_subplots.png', plot = 
+paper_fig1_subplots, width = 210, height = 297, units = 'mm', device='png', dpi=300)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/effect_points_all_subplots_mdd.tiff', plot = 
+paper_fig1_subplots_mdd, width = 210, height = 297, units = 'mm', device='tiff', dpi=300)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/effect_points_mdd_all_subplots.png', plot = effect_subplots_mdd_all, width = 8, height = 6, device='png', dpi=300)
+
+
+```
+
+### Phenotypes 
+
+Checking the standardised and residualised phenotypes 
+
+```{r}
+antidep_pheno1_resid_std <- read.table('edavyson/Antidep_methylation/antidep_phenotypes/resid_standard_phenos/res_stand_antidep_pheno1_clean_appt.pheno', header = T)
+
+antidep_pheno1_resid <- read.table('edavyson/Antidep_methylation/antidep_phenotypes/resid_phenos/residualised_antidep_pheno1_clean_appt_nocolnames.pheno', header = T)
+
+colnames(antidep_pheno1_resid_std) <- c('FID', 'IID', 'pheno')
+colnames(antidep_pheno1_resid) <- c('FID', 'IID', 'pheno')
+
+hist(antidep_pheno1_resid$pheno)
+hist(antidep_pheno1_resid_std$pheno)
+```
+
+#### Overlap of phenotypes (co-author comments)
+
+```{r}
+# Whats the general overlap of the samples 
+selfrep_pheno3 <- selfrep_pheno3 %>% dplyr::filter(!is.na(antidep))
+
+nrow(selfrep_pheno3)
+nrow(antidep_pheno1_pheno)
+
+# how many with the self-report phenotype are in the antidepressant phenotype 
+
+intersect(selfrep_pheno3$IID, antidep_pheno1_pheno$IID) # there are 6473 individuals in both samples (they are overlapping)
+
+colnames(selfrep_pheno3)[3] <- 'selfreport_antidep'
+colnames(antidep_pheno1_pheno)[3] <- 'prescription_antidep'
+antidep_phenos <- merge(selfrep_pheno3, antidep_pheno1_pheno, by = c('FID', 'IID'))
+pheno_diffs <- as.data.frame(table(antidep_phenos$selfreport_antidep, antidep_phenos$prescription_antidep))
+# title : 'Comparison of self-report and prescription-derived measures of antidepressant exposure in those present in both samples'
+overlap_phenos_comp <- ggplot(data = pheno_diffs, aes(x = Var1, y = Var2, fill = Freq)) + geom_tile(color = "white") + 
+  geom_text(aes(label= Freq), vjust = 1) + 
+  scale_fill_gradient(low = "lightpink", high = 'maroon') + 
+  labs( x = 'Self-report', y = 'Prescription-derived') +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_text(size = 12, face = "bold"))
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/overlapping_sample_comp.png', plot = overlap_phenos_comp , width = 8, height = 6, device='png', dpi=300)
+#width = 8, height = 6,
+
+antidep_pheno_cases <- antidep_pheno1_pheno %>% filter(antidep == 1) %>% pull(IID)
+selfrep_pheno_cases <- selfrep_pheno3 %>% filter(antidep==1) %>% pull(IID)
+
+
+```
+
+### Downstream analysis 
+
+#### DMR (Differentially methylated regions)
+
+##### Self report 
+
+```{r}
+
+# read in the results 
+selfrep_pheno3_dmr <- read.table('edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep_pheno3_dmr_res.tsv', sep = '\t', header = T)
+
+# Get the number of tests 
+max(selfrep_pheno3_dmr$p.adjust/selfrep_pheno3_dmr$p.value)
+
+table(selfrep_pheno3_dmr$p.adjust < 0.05)
+
+# 5 DMRs have a p.adjust value < 0.05, 1 of these have 2 CpGs 
+# filter it to just be DMRs with 2 CpGs or over 
+
+selfrep_pheno3_dmr  <- selfrep_pheno3_dmr %>% dplyr::filter(n >=2)
+# nrow(selfrep_pheno3_dmr %>% dplyr::filter(n > 1)) 
+
+# label the dmrs with the CpGs inside the region
+# and the genes which those CpGs annotate to 
+
+selfrep_pheno3_dmr <- selfrep_pheno3_dmr %>% 
+  rowwise %>% 
+  mutate(CpGs = paste(selfrep_ph3_res %>% 
+                        dplyr::filter(Chr== chr) %>% 
+                        dplyr::filter(bp >= start) %>% 
+                        dplyr::filter(bp <= end) %>% 
+                        pull(Name), collapse = ',')) %>% 
+  mutate(genes = paste(selfrep_ph3_res  %>% 
+                         dplyr::filter(Name %in% strsplit(CpGs, ",")[[1]])%>% 
+                         pull(UCSC_RefGene_Name), collapse = ','),
+         UCSC_RefGene_Accession =paste(selfrep_ph3_res  %>% 
+                                         dplyr::filter(Name %in% strsplit(CpGs, ",")[[1]])%>% 
+                                         pull(UCSC_RefGene_Accession), collapse = ',') ) %>% 
+  as.data.frame()
+
+
+# get just the significant DMR
+
+sig_dmrs_selfrep <- selfrep_pheno3_dmr %>% dplyr::filter(p.adjust < 0.05) 
+
+# table of results 
+
+sig_dmrs_selfrep %>%
+    kbl(booktabs = TRUE, digits =98, 
+        caption = "Significant DMRs from Self report MWAS") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+# manhattan plot of the DMR region with the CpGs inside it colored blue
+# do more efficient DMR plot with the correlation matrix 
+
+
+MWAS_manhattan(selfrep_ph3_res %>% 
+                 dplyr::filter(Chr == sig_dmrs_selfrep$chr[1]) %>% 
+                 dplyr::filter(bp >= sig_dmrs_selfrep$start[1]-5000) %>% 
+                 dplyr::filter(bp <= sig_dmrs_selfrep$end[1]+5000), 
+               plottitle = 'Significant DMR self report MWAS', zoom = TRUE, start_var = sig_dmrs_selfrep$start[1], end_var = sig_dmrs_selfrep$end[1]) + geom_point(data = selfrep_ph3_res %>% 
+                                                                                                                                                                     dplyr::filter(Name %in% strsplit(sig_dmrs_selfrep$CpGs[1], ',')[[1]]), aes(x = bp, y = -log10(p), color = 'red'))
+ 
+
+
+```
+
+DMRFF plot 
+
+```{r}
+# info file 
+# using the site format for now 
+# columns TargetID(cpg name), CHR, MAPINFO (position), Pval 
+
+# select the significant CpGs for the first dmr region from the self report MWAS statistics +- 100 bases 
+
+region1_15kb <- selfrep_ph3_res %>% 
+  dplyr::filter(Chr == sig_dmrs_selfrep$chr[1]) %>% 
+  dplyr::filter(bp > sig_dmrs_selfrep$start[1] - 15000) %>% 
+  dplyr::filter(bp <= sig_dmrs_selfrep$end[1] + 15000)
+
+region1_2kb <- selfrep_ph3_res %>% 
+  dplyr::filter(Chr == sig_dmrs_selfrep$chr[1]) %>% 
+  dplyr::filter(bp > sig_dmrs_selfrep$start[1] - 2000) %>% 
+  dplyr::filter(bp <= sig_dmrs_selfrep$end[1] + 2000)
+
+
+selfrep_sig_dmr_info_2kb <- region1_2kb %>% rename(TargetID = Name, CHR = Chr, MAPINFO = bp, Pval = p) %>% dplyr::select(TargetID, CHR, MAPINFO, Pval)
+
+selfrep_sig_dmr_info_15kb <- region1_15kb %>% rename(TargetID = Name, CHR = Chr, MAPINFO = bp, Pval = p) %>% dplyr::select(TargetID, CHR, MAPINFO, Pval)
+
+
+# calculate the correlation matrix
+#cormatrix_BDNF <- cor(raw_cormatrix_BDNF, method = 'pearson')
+
+#selfrep_probes_meth
+
+readr::write_lines(region1_15kb$Name, 'edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep3_region1_15kb.txt')
+
+readr::write_lines(region1_2kb$Name, 'edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep3_region1_2kb.txt')
+
+write.table(selfrep_sig_dmr_info_15kb,'edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep3_region1_15kb_info.txt', row.names = F, quote = F, sep = '\t')
+
+write.table(selfrep_sig_dmr_info_2kb,'edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep3_region1_2kb_info.txt', row.names = F, quote = F, sep = '\t')
+
+
+write.table(selfrep_sig_dmr_info_15kb,'/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/selfrep3_region1_15kb_info_oct.txt', row.names = F, quote = F, sep = '\t')
+
+write.table(selfrep_sig_dmr_info_2kb,'/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/selfrep3_region1_2kb_info_oct.txt', row.names = F, quote = F, sep = '\t')
+
+
+# read in the methylation files derived from OSCA and the standardised M values 
+#cd scratch/s2112198
+#module load igmm/apps/osca/0.46
+#osca --befile mvals_GRM_uncorrected_29_06_OSCA_standard --extract-probe selfrep3_region1_15kb.txt --make-efile --out selfrep3_region1_15kb_probes_meth
+
+
+
+
+```
+
+Using OSCA, extract the probes 
+
+```{bash}
+# in staging node
+cp /exports/igmm/datastore/GenScotDepression/users/edavyson/Antidep_methylation/DMR_test/july_tests/dmr_tests/selfrep3_region1_15kb.list scratch/s2112198
+
+cd scratch/s2112198
+
+# in an interactive node 
+osca --befile mvals_GRM_uncorrected_29_06_OSCA_standard --extract-probe selfrep3_region1_2kb.txt --make-efile --out selfrep_2kb_region1_probes_oct
+
+# in a staging node 
+
+cp selfrep_15kb_region_probes* /exports/igmm/datastore/GenScotDepression/users/edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/
+```
+
+
+Read the file into R and then make the correlation matrix , or give it in RAW format: 
+raw: Raw data format. Correlations of these can be computed by one of 3
+methods Spearman, Pearson, Kendall (option cormatrix.method). Dimension
+of matrix : sample_size X CpG_number. Need to have a header with the name
+of CpG sites/regions ;
+
+
+```{r}
+
+selfrep_dmr_2kb_probes <- read.table('edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep_2kb_region1_probes_oct', header = T)
+selfrep_dmr_15kb_probes <- read.table('edavyson/Antidep_methylation/DMR_test/oct_tests/dmr_tests/selfrep_15kb_region1_probes_oct', header = T)
+
+# remove the FID and the IID 
+# put so the columns are in ascending order of position 
+
+raw_cormatrix_2kb <- selfrep_dmr_2kb_probes %>% dplyr::select(-c(FID, IID)) %>% dplyr::select(selfrep_sig_dmr_info_2kb %>% arrange(MAPINFO) %>% pull(TargetID))
+raw_cormatrix_15kb <- selfrep_dmr_15kb_probes %>% dplyr::select(-c(FID, IID)) %>% dplyr::select(selfrep_sig_dmr_info_15kb %>% arrange(MAPINFO) %>% pull(TargetID))
+
+cormatrix_2kb <- cor(raw_cormatrix_2kb, method = 'pearson')
+cormatrix_15kb <- cor(raw_cormatrix_15kb, method = 'pearson')
+write.table(cormatrix_2kb, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_dmr_cormatrix_2kb.txt', row.names = F, quote = F, sep = '\t')
+write.table(cormatrix_15kb, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_dmr_cormatrix_15kb.txt', row.names = F, quote = F, sep = '\t')
+```
+
+```{r}
+
+# get annotation tracks 
+
+chrom<- paste0("chr", selfrep_sig_dmr_info_15kb$CHR[1])
+start_15kb <- sig_dmrs_selfrep$start[1] - 15000
+start_2kb <- sig_dmrs_selfrep$start[1] - 2000
+end_15kb <- sig_dmrs_selfrep$end[1] + 15000
+end_2kb <- sig_dmrs_selfrep$end[1] + 2000
+gen <- "hg19"
+strand <- "*"
+
+genetrack_15kb <-genes_ENSEMBL(gen,chrom,start_15kb,end_15kb,showId=TRUE)
+genetrack_2kb <- genes_ENSEMBL(gen,chrom,start_2kb,end_2kb,showId=TRUE)
+
+snptrack_15kb <- snpBiomart_ENSEMBL(gen, chrom, start_15kb, end_15kb,
+dataset="hsapiens_snp_som",showId=TRUE)
+snptrack_2kb <- snpBiomart_ENSEMBL(gen, chrom, start_2kb, end_2kb,
+dataset="hsapiens_snp_som",showId=TRUE)
+
+strutrack <- structureBiomart_ENSEMBL(gen,chrom, start_15kb, end_15kb,strand, dataset="hsapiens_structvar_som") # can only include this as a track if the p manhattan plot not shown 
+
+#strutrack <- structureBiomart_ENSEMBL(chrom, start, end,strand, dataset="hsapiens_structvar_som") # error
+#clinVariant<-ClinVarMain_UCSC(gen,chrom,start,end) # error 
+#cpgIstrack <- cpgIslands_UCSC(gen,chrom,start,end) # error
+
+listgviz_15kb <- list(genetrack_15kb, snptrack_15kb)
+listgviz_2kb <- list(genetrack_2kb, snptrack_2kb)
+  
+# paste these commands into the console it saves a comet.pdf plot to the working directory 
+# you can then rename to be more informative 
+# even edit to highlight certain CpGs
+
+comet(mydata.file = 'edavyson/Antidep_methylation/DMR_test/july_tests/dmr_tests/selfrep3_region1_15kb_info.txt', mydata.format = "site", mydata.type = "file", mydata.large.file = NULL, mydata.large.format = "site", mydata.large.type = "listfile", cormatrix.file = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_dmr_cormatrix_15kb.txt', cormatrix.format = "cormatrix", cormatrix.color.scheme = "bluewhitered", sample.labels= c('CpG'),tracks.gviz=listgviz_15kb,image.title = paste0('Chromosome 2:', start_15kb, '-', end_15kb), image.type = 'pdf', image.size=7, pval.threshold = 9.42e-08, fontsize.gviz = 10, print.image = TRUE)
+
+comet(mydata.file = 'edavyson/Antidep_methylation/DMR_test/july_tests/dmr_tests/selfrep3_region1_15kb_info.txt', mydata.format = "site", mydata.type = "file", mydata.large.file = NULL, mydata.large.format = "site", mydata.large.type = "listfile", cormatrix.file = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_dmr_cormatrix_15kb.txt', cormatrix.format = "cormatrix", cormatrix.color.scheme = "bluewhitered", sample.labels= c('CpG'),tracks.gviz=listgviz_15kb,image.title = paste0('Chromosome 2:', start_15kb, '-', end_15kb), image.type = 'pdf', image.size=7, pval.threshold = 9.42e-08, fontsize.gviz = 10)
+
+comet(mydata.file = 'edavyson/Antidep_methylation/DMR_test/july_tests/dmr_tests/selfrep3_region1_2kb_info.txt', mydata.format = "site", mydata.type = "file", mydata.large.file = NULL, mydata.large.format = "site", mydata.large.type = "listfile", cormatrix.file = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_dmr_cormatrix_2kb.txt', cormatrix.format = "cormatrix", cormatrix.color.scheme = "bluewhitered", sample.labels= c('CpG'),tracks.gviz=listgviz_2kb, image.type = 'pdf', image.size=7, pval.threshold = 9.42e-08, fontsize.gviz = 10, image.title = paste0('Chromosome 2:', start_2kb, '-', end_2kb))
+
+
+```
+
+coMET web 
+
+Making the neccessary config file ? 
+
+```{r}
+config_15kb_data <- data.frame(
+  V1 = c(
+    "disp.mydata=TRUE",
+    "mydata.format=site",
+    "sample.labels=CpG",
+    "symbols=circle-fill",
+    "lab.Y=log",
+    "disp.color.ref=TRUE",
+    "mydata.ref=cg15071067",
+    "pval.threshold=4.720623e-06",
+    "disp.association=FALSE",
+    "disp.region=FALSE",
+    "start=74194550",
+    "end=74198572",
+    "mydata.large.format=region_asso",
+    "disp.association.large=TRUE",
+    "disp.region.large=TRUE",
+    "sample.labels.large=Gene expression",
+    "color.list.large=green",
+    "symbols.large=diamond-fill",
+    "cormatrix.format=cormatrix",
+    "disp.cormatrixmap=TRUE",
+    "cormatrix.method=spearman",
+    "cormatrix.color.scheme=bluewhitered",
+    "cormatrix.conf.level=0.05",
+    "cormatrix.sig.level=1",
+    "cormatrix.adjust=none",
+    "disp.phys.dist=TRUE",
+    "disp.color.bar=TRUE",
+    "disp.legend=TRUE",
+    "list.tracks=geneENSEMBL,ChromHMM,RegENSEMBL",
+    "disp.mult.lab.X=FALSE",
+    "image.type=pdf",
+    "image.title=Title", 
+    "fontsize.gvis = 9"
+  )
+)
+
+row.names(config_15kb_data) <- 1:nrow(config_15kb_data)
+write.table(config_15kb_data, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/config_15kb_file.txt', row.names = F, quote = F)
+```
+
+##### Prescription-derived
+
+```{r}
+antidep_pheno1_dmr <- read_table('edavyson/Antidep_methylation/DMR_test/july_tests/dmr_tests/antidep_pheno1_clean_appt_dmr_res.tsv') %>% as.data.frame()
+
+# there are 2 dmrs with significant p.adjust values 
+# but these only have one CpG
+table(antidep_pheno1_dmr$p.adjust < 0.05)
+
+# look at the top five regions
+
+antidep_pheno1_dmr <- antidep_pheno1_dmr %>% 
+  filter(n >=2) %>% 
+  arrange(p.adjust) %>% 
+  rowwise %>% 
+  mutate(CpGs = paste(anti_ph1_clean_appt_res %>% 
+                        filter(Chr== chr) %>% 
+                        filter(bp >= start) %>% 
+                        filter(bp <= end) %>% 
+                        pull(Name), collapse = ',')) %>%
+  mutate(genes = paste(anti_ph1_clean_appt_res %>%
+                         filter(Name %in%
+                                  strsplit(CpGs, ",")[[1]])%>%
+                         pull(UCSC_RefGene_Name), collapse = ',')) %>% 
+  mutate(UCSC_RefGene_Accession =paste(selfrep_ph3_res  %>% 
+                                         filter(Name %in% 
+                                                  strsplit(CpGs, ",")[[1]])%>%
+                                         pull(UCSC_RefGene_Accession), collapse = ',')) %>%
+  as.data.frame()
+
+
+
+antidep_pheno1_dmr  %>% arrange(p.value) %>% head() %>%
+    kbl(booktabs = TRUE, digits =98, 
+        caption = "Top DMRs from antidepressant-derived MWAS") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+
+```
+
+#### Top 100 CpGs 
+
+Extract the top 100 CpGs from the self report and prescription MWAS analysis 
+
+First annotate the summary data : 
+
+```{r annotating_CpGs}
+
+
+# function to summarise the properties CpGs which would be used in the pathway analysis 
+
+summarise_annot_CpGs <- function(CpG_table_annot, phenotype, CpGCrit) {
+  CpG_table_annot <- CpG_table_annot %>% mutate(
+  UCSC_RefGene_unique= str_replace_all(UCSC_RefGene_Name, "([^;]+)(;\\1)+", "\\1")) %>% #for the entries which have multiple of the same genes repeated, just keep the first gene
+  mutate(
+  gene_count = str_count(UCSC_RefGene_unique, ";") +1) # how many genes the CpG maps to 
+
+  summary <- CpG_table_annot %>% summarise(
+  CpG_n = n(),
+  max_p = max(p),
+  min_p = min(p),
+  Genes_n = sum(gene_count),
+  unique_genes = length(unique(unlist(strsplit(UCSC_RefGene_Name, ";")))),
+  single_gene_count = sum(gene_count == 1),
+  multiple_genes_count = sum(gene_count >1),
+) %>% mutate(phenotype = phenotype, CpG_criteria= CpGCrit)
+
+  return(summary)
+}
+
+
+```
+
+##### Self report 
+
+```{r}
+
+# select the top 100 CpGs
+selfrep_ph3_top100 <- selfrep_ph3_res %>% arrange(p) %>% head(100) %>% dplyr::select(Name, Chr, bp, b, se, p, UCSC_RefGene_Name, UCSC_RefGene_Accession, Relation_to_Island, Islands_Name,UCSC_RefGene_Group, GencodeCompV12_Accession) %>% mutate(
+  UCSC_RefGene_unique= str_replace_all(UCSC_RefGene_Name, "([^;]+)(;\\1)+", "\\1"))
+
+selfrep_ph3_top100 %>% pull(p) %>% range()
+
+# get the unique genes labelled by these CpGs (should I limit to the unique ones, as if some genes are labelled twice then shouldn't that be incorporated somehow? Ask shen? )
+
+selfrep_ph3_top_genes <- unlist(strsplit(selfrep_ph3_top100$UCSC_RefGene_Name, ";")) %>% unique() #77
+selfrep_ph3_top_genes_entrez <- getMappedEntrezIDs(selfrep_ph3_top100$Name, array.type = 'EPIC') # 76
+selfrep_ph3_top_genes_entrez <- selfrep_ph3_top_genes_entrez$sig.eg
+selfrep_ph3_top_genes_V12Access <- str_split(selfrep_ph3_top100$GencodeCompV12_Accession, ';') %>% unlist %>% unique %>% sort
+selfrep_ph3_top_genes_V12Access <- selfrep_ph3_top_genes_V12Access[-1]
+
+selfrep_ph3_top_genes_df <- data.frame(genes = character(length(selfrep_ph3_top_genes)), num_cpgs = numeric(length(selfrep_ph3_top_genes)), cpgs = character(length(selfrep_ph3_top_genes)))
+
+for (i in 1:length(selfrep_ph3_top_genes)) {
+  gene <- selfrep_ph3_top_genes[i]
+  # how many cpgs map to this gene 
+  cpgs <- selfrep_ph3_top100 %>% dplyr::filter(grepl(gene, UCSC_RefGene_unique))
+  n <- nrow(cpgs)
+  cpg_names <- unique(cpgs$Name)
+  selfrep_ph3_top_genes_df[i, 'genes'] <- gene
+  selfrep_ph3_top_genes_df[i, 'num_cpgs'] <- n
+  
+  selfrep_ph3_top_genes_df[i, 'cpgs'] <- paste(cpg_names, collapse =';')
+}
+
+
+selfrep_top100_MWAS <- MWAS_manhattan(OSCA_results =selfrep_ph3_top100 , 'Self report MWAS: Top 100 CpGs') + geom_hline(yintercept = min(-log10(selfrep_ph3_top100$p)), color = 'red', linetype='dotted')
+
+
+
+```
+
+##### Antidepressant 
+
+```{r}
+# do the same as above for the antidepressant phenotypes 
+
+anti_ph1_clean_top100 <- anti_ph1_clean_appt_res %>% arrange(p) %>% head(100) %>% dplyr::select(Name, Chr, bp, b, se, p, UCSC_RefGene_Name, UCSC_RefGene_Accession, Relation_to_Island, Islands_Name,UCSC_RefGene_Group) %>% mutate(
+  UCSC_RefGene_unique= str_replace_all(UCSC_RefGene_Name, "([^;]+)(;\\1)+", "\\1"))
+
+anti_ph1_clean_top100 %>% pull(p) %>% range()
+
+# Extracting the genes annotated to the CpGs based off the UCSC RefGene Column in the annotation file
+
+anti_ph1_clean_top_genes <- unlist(strsplit(anti_ph1_clean_top100$UCSC_RefGene_Name, ";")) %>% unique() # 83 genes
+
+# Extracting the genes annotated to the CpGs using the getMappedEntrezIDs function from the missMethyl() package.
+
+anti_ph1_clean_top_genes_entrez <- getMappedEntrezIDs(anti_ph1_clean_top100$Name, array.type = 'EPIC') #
+anti_ph1_clean_top_genes_entrez <- anti_ph1_clean_top_genes_entrez$sig.eg # 81 genes
+
+anti_ph1_clean_top_genes_df <- data.frame(genes = character(length(anti_ph1_clean_top_genes)), num_cpgs = numeric(length(anti_ph1_clean_top_genes)), cpgs = character(length(anti_ph1_clean_top_genes)))
+
+for (i in 1:length(anti_ph1_clean_top_genes)) {
+  gene <- anti_ph1_clean_top_genes[i]
+  # how many cpgs map to this gene 
+  cpgs <- anti_ph1_clean_top100 %>% dplyr::filter(grepl(gene, UCSC_RefGene_unique))
+  n <- nrow(cpgs)
+  cpg_names <- unique(cpgs$Name)
+  anti_ph1_clean_top_genes_df[i, 'genes'] <- gene
+  anti_ph1_clean_top_genes_df[i, 'num_cpgs'] <- n
+  
+  anti_ph1_clean_top_genes_df[i, 'cpgs'] <- paste(cpg_names, collapse =';')
+}
+
+
+
+antidep_top100_MWAS <- MWAS_manhattan(OSCA_results =anti_ph1_clean_top100, 'Antidepressant MWAS: Top 100 CpGs') + geom_hline(yintercept = min(-log10(anti_ph1_clean_top100$p)), color = 'red', linetype='dotted')
+
+```
+##### Summary 
+
+Table summarising the top 100 CpGs from the self-report and the prescription derived MWAS 
+
+```{r}
+# make a list of the CpG lists which may be used in the pathway analysis 
+CpG_data_list <- list(anti_ph1_clean_top100, selfrep_ph3_top100)
+
+# name them so can extract the phenotype and criteria from the names of the objects
+
+names(CpG_data_list) = c('antideppheno1_100','selfreppheno3_100')
+
+# apply the summary function to all CpG lists and then save to a summary list
+summary_list <- lapply(seq_along(CpG_data_list), function(i) {
+  phenotype <- sub("_.*", "", names(CpG_data_list)[i])
+  CpGCrit <- sub(".*_", "", names(CpG_data_list)[i])
+
+  summarise_annot_CpGs(CpG_data_list[[i]], phenotype = phenotype, CpGCrit = CpGCrit) %>% dplyr:: select(phenotype, CpG_criteria, everything())
+})
+
+
+# bind all the summaries together to make one master table 
+summary <- do.call(rbind, summary_list)
+
+# nice presentation of the table 
+# supplementary table - rather just have two supplementary tables of the genes in each of the sets 
+summary %>% 
+    kbl(booktabs = TRUE, digits =98, 
+        caption = "Summary of Gene Lists from the top 100 CpGs") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+Venn diagram to visualise the overlap of the CpGs between the two datasets. 
+
+```{r}
+
+selfrep_ph3_top100 %>% mutate(in_antidep_top100 = ifelse(Probe %in% anti_ph1_clean_top100$Probe, TRUE, FALSE))
+
+top100_cpgs <- list(selfrep_ph3_top100$Name, anti_ph1_clean_top100$Name)
+
+names(top100_cpgs) <- c('SR', 'PD')
+# save and run the plot code using R in the terminal- for some reason not rendering using R studio.. 
+
+saveRDS(top100_cpgs, file = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/top100_cpgs")
+
+png(filename = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/CpG_top100_venndir_20.png", width = 8, height = 6, units = "in", res = 300)
+
+venndir(top100_cpgs, overlap_type="overlap", label_preset="main items", show_items = "item", item_cex = 1)
+
+dev.off()
+
+### assess the significance of this overlap (how-- which test? )
+######################################################
+
+#CpG lists 
+
+######################################################
+# total number of CpGs
+# total CpGs on the EPIC array? 
+
+cpg_overlap <- selfrep_ph3_top100$Name[selfrep_ph3_top100$Name %in% anti_ph1_clean_top100$Name]
+
+total_cpgs <- nrow(selfrep_ph3_res)
+
+# phyper: phyper(Overlap-1, group2, Total-group2, group1,lower.tail= FALSE)
+
+# fisher exact test (gives you more information):
+# fisher.test(matrix(c(Overlap, group2-Overlap, group1-Overlap, Total-group2-group1 +Overlap), 2, 2), alternative='greater')
+
+phyper(length(cpg_overlap)-1, 100, total_cpgs-100,100,lower.tail= FALSE)
+
+fisher.test(matrix(c(length(cpg_overlap), 100-length(cpg_overlap), 100-length(cpg_overlap), total_cpgs-100-100 +length(cpg_overlap)), 2, 2), alternative='greater')
+
+
+######################################################
+
+#Gene lists 
+
+
+######################################################
+
+top_genes <- list(selfrep_ph3_top_genes, anti_ph1_clean_top_genes)
+names(top_genes) <- c('SR', 'PD')
+
+saveRDS(top_genes, file = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/top100_genes")
+png(filename = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/genes_top100cpgs_venndir_10.png", width = 8, height = 6, units = "in", res = 300)
+
+venndir(top_genes, proportional = TRUE, overlap_type="overlap", label_preset="main items", show_items = "item", item_cex = 1)
+
+dev.off()
+
+top100_MWAS <- ggarrange(selfrep_top100_MWAS, antidep_top100_MWAS)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/MWAS_top100_CpGs.png', plot = top100_MWAS, width = 6, height = 10, device='png', dpi=300)
+
+## hypergeometric/fishers exact test 
+# number of genes which are annotated by CpGs in the EPIC array 
+
+gene_overlap <- length(intersect(selfrep_ph3_top_genes, anti_ph1_clean_top_genes))
+
+total_genes <- length(unique(unlist(str_split(unique(annot$UCSC_RefGene_Name), ';') )))
+
+## phyper: phyper(Overlap-1, group2, Total-group2, group1,lower.tail= FALSE)
+
+# fisher exact test (gives you more information):
+# fisher.test(matrix(c(Overlap, group2-Overlap, group1-Overlap, Total-group2-group1 +Overlap), 2, 2), alternative='greater')
+
+phyper(gene_overlap-1, length(anti_ph1_clean_top_genes), total_genes-length(anti_ph1_clean_top_genes), length(selfrep_ph3_top_genes),lower.tail= FALSE)
+
+fisher.test(matrix(c(gene_overlap,  length(anti_ph1_clean_top_genes)-length(gene_overlap), length(selfrep_ph3_top_genes)-length(gene_overlap), total_genes-length(anti_ph1_clean_top_genes)-length(selfrep_ph3_top_genes) +length(gene_overlap)), 2, 2), alternative='greater')
+
+
+
+```
+
+#### SR vs PD 
+
+```{r}
+
+
+## plot the self report vs the prescription derived 
+
+effects_all_wide <- effects_all_wide %>% mutate(top100 = case_when(Name %in% cpg_overlap ~ "PD and SR", Name %in% selfrep_ph3_top100$Name ~ "SR", Name %in% anti_ph1_clean_top100$Name ~ "PD", TRUE ~ "None"))
+
+effects_all_wide <- effects_all_wide %>% mutate(logP_selfreppheno3ORMMOA = -log10(p_selfreppheno3ORMMOA))
+
+pd_sr_beta_comp <- ggscatter(effects_all_wide, x = "b_antideppheno1ORMMOA", y = "b_selfreppheno3ORMMOA", add = "reg.line", add.params=list(color = 'black', linetype = 'dashed'), conf.int = FALSE, 
+          xlab = "Prescription-derived: Beta", ylab = "Self report: Beta", alpha = 0.6, color = "logP_selfreppheno3ORMMOA") +
+  stat_cor() + xlim(-0.08, 0.04) + ylim(-0.08, 0.04)+
+  theme_minimal() +
+  theme(legend.position = "right", 
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(color = "black"),
+        text = element_text(size = 12)) +  facet_wrap(~top100) +
+  scale_color_got(option = "Margaery")+ labs(color = "-log10(P-value): SR analysis ")
+
+pd_sr_beta_comp_all <- ggscatter(effects_all_wide, x = "b_antideppheno1ORMMOA", y = "b_selfreppheno3ORMMOA", add = "reg.line", add.params=list(color = 'black', linetype = 'dashed'), conf.int = FALSE, 
+          xlab = "Prescription-derived: Beta", ylab = "Self report: Beta", alpha = 0.6, color = "logP_selfreppheno3ORMMOA") +
+  stat_cor() + xlim(-0.08, 0.04) + ylim(-0.08, 0.04)+
+  theme_minimal() +
+  theme(legend.position = "right", 
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(color = "black"),
+        text = element_text(size = 12)) +
+  scale_color_got(option = "Margaery")+ labs(color = "-log10(P-value): SR analysis ")
+
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/sr_pd_beta_estimates_subplots.png', plot = ggarrange(pd_sr_beta_comp_all, pd_sr_beta_comp, nrow = 2, ncol = 1, common.legend = T, labels = c('A', 'B')), width = 6, height = 8, device='png', dpi=300)
+
+
+```
+
+##### Saving 
+
+```{r}
+readr::write_lines(selfrep_ph3_top_genes, 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/selfrep_ph3_top100_26_10.txt')
+
+readr::write_lines(selfrep_ph3_top_genes, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_ph3_top100_26_10.txt')
+readr::write_lines(selfrep_ph3_top_genes_V12Access, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_ph3_top100_V12Accession_12_02.txt')
+
+readr::write_lines(selfrep_ph3_top_genes_entrez, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_ph3_top100_entrez_17_02.txt')
+
+readr::write_lines(selfrep_ph3_top100$Name, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/selfrep_ph3_top100_CpGs_26_10.txt')
+
+
+readr::write_lines(selfrep_ph3_top100$Name, 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/selfrep_ph3_top100_CpGs_26_10.txt')
+
+#### update with the correct phenotype currently running ####
+
+readr::write_lines(anti_ph1_clean_top_genes, 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/antidep_ph1_top100_26_10.txt')
+
+readr::write_lines(anti_ph1_clean_top_genes, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/antidep_ph1_top100_26_10.txt')
+readr::write_lines(anti_ph1_clean_top_genes_entrez, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/antidep_ph1_top100_entrez_17_02.txt')
+
+readr::write_lines(anti_ph1_clean_top100$Name, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/antidep_ph1_top100_CpGs_26_10.txt')
+
+readr::write_lines(anti_ph1_clean_top100$Name, 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/antidep_ph1_top100_CpGs_26_10.txt')
+
+```
+
+#### Pathway analysis 
+
+##### SYNGO results 
+
+SYNGO is an online portal where you upload gene lists (which are linked to differentially methylated CpGs) and tests whether the gene lists are enriched for certain pathways/ whether the genes are annotated to certain pathways. 
+
+Gene Count column: Number of unique genes annotated in SynGO against this term or any child terms. 
+
+For each ontology term, a one-sided Fisher exact test is performed to compare the gene list and the selected background 'set', the result in the 'p-value'. 
+
+To find the enriched terms, first select the most specific term where each 'gene cluster' is found and then apply multiple testing correction (in the q-column)
+
+There are NaN values (there are too few genes for the term or it was not a gene cluster)
+
+###### Self Report 
+
+```{r}
+syngo_selfrep_annot <- readxl::read_excel("/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/SYNGO/SynGO_geneset_analysis__self_report_top100_genes_standard__2023-09-26 15;48/syngo_annotations_matching_user_input.xlsx") %>% as.data.frame()
+
+# how many genes in the list were annotated to genes present in the SynGO dataset
+
+length(unique(syngo_selfrep_annot$`your genelist input`))
+
+# which CpGs mapped to these genes 
+
+selfrep_ph3_top100 %>% filter(UCSC_RefGene_Name %in% unique(syngo_selfrep_annot$`your genelist input`))
+
+syngo_selfrep_annot  %>%
+    kbl(booktabs = TRUE, digits = 2, 
+        caption = "SynGO annotated genes") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+
+syngo_selfrep_ontol <- readxl::read_excel("/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/SYNGO/SynGO_geneset_analysis__self_report_top100_genes_standard__2023-09-26 15;48/syngo_ontologies_with_annotations_matching_user_input.xlsx") %>% as.data.frame()
+
+
+syngo_selfrep_ontol %>% filter(!is.na(`genes - your genelist input`))
+
+### plotting 
+
+# the significant pathway (synaptic vesicle membrane)
+
+syngo_selfrep_ontol <- syngo_selfrep_ontol %>% 
+  mutate(
+    str_and_genes = paste0(
+      `GO term name`,
+      "\n",
+      sapply(
+        strsplit(`genes - your genelist input`, ";"),
+        function(genes) { # for each gene list input 
+          n_genes <- length(genes) # get the number of genes 
+          n_lines <- ceiling(n_genes / 3) # calculate the number of line breaks which will be warranted to have three gene names per line 
+          
+          lines <- lapply(1:n_lines, function(i) { 
+            # this applies the function to each line (starting from 1 to the number of lines, like a for loop)
+            start <- (i - 1) * 3 + 1
+            # this is the starting index for the genes in the current line (from the genes vector)
+            end <- min(i * 3, n_genes)
+            # this is the end index for the current line (making sure not to exceed the total number of genes) (from the genes_vector)
+            paste(genes[start:end], collapse = "; ")
+            # indexes the genes vector and concatenates the genes for a single line
+          })
+          paste(lines, collapse = "\n")
+          # then concatenate all the lines together with a '\n'
+        }
+      )
+    )
+  )
+
+
+syngo_ontol_colors <- c("3" = "#792427", "4"="#545058", "5"="#2B818E", "6"="#80A098", "7"="#D1BDA2", "8"= "#A9BC7E")
+
+syngo_ontol_color_short <- c("3" = "#792427", "4"="#545058", "5"="#2B818E")
+
+syngo_selfrep_ontol_plt <- ggplot(syngo_selfrep_ontol %>% filter(`GSEA count foreground/input` > 2) %>% filter(!is.na(`GSEA 'gene cluster' FDR corrected p-value`)), aes(x = str_and_genes, y = -log10(`GSEA 'gene cluster' FDR corrected p-value`), fill = as.factor(`GSEA count foreground/input`))) + geom_bar(stat = 'identity') + geom_hline(yintercept = -log10(0.05), linetype = 'dashed') + coord_flip() + scale_fill_manual(values = syngo_ontol_colors, limits =names(syngo_ontol_colors) ,name = 'Number of genes annotated') + labs(y = '-log10(FDR corrected P)', x = 'GO term name') + theme(legend.position = 'top') +theme_minimal()
+
+
+# extract just the pathways which have > 2 genes annotated (as these are the only ones we have q values for)
+
+# just extract this table for supplementay info? 
+# or report all pathways and this is for ease of reporting the significant / findings 
+
+syngo_selfrep_ontol %>% filter(`GO term name` %in% c('synaptic vesicle membrane', 'presynapse', 'postsynapse'))
+
+knitr::include_graphics("/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/SynGO_figure__self_report_top100_genes_standard__domain=location color=gene labels=top-level date=2023-09-26 15;54.svg")
+```
+
+
+###### Antidep 
+
+```{r}
+syngo_antidep_annot <- readxl::read_excel("/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/SYNGO/SynGO_geneset_analysis__antidep_pheno1_clean_appt_27_10__2023-09-27 16;46/syngo_annotations_matching_user_input.xlsx") %>% as.data.frame()
+
+# how many genes in the list were annotated to genes present in the SynGO dataset
+
+length(unique(syngo_antidep_annot$`your genelist input`))
+
+syngo_antidep_annot  %>%
+    kbl(booktabs = TRUE, digits = 2, 
+        caption = "SynGO annotated genes") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+syngo_antidep_ontol <- readxl::read_excel("/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/SYNGO/SynGO_geneset_analysis__antidep_pheno1_clean_appt_27_10__2023-09-27 16;46/syngo_ontologies_with_annotations_matching_user_input.xlsx") %>% as.data.frame()
+
+# no significant pathways
+# extract just the pathways which have > 2 genes annotated (as these are the only ones we have q values for)
+
+# just extract this table for supplementay info? 
+# or report all pathways and this is for ease of reporting the significant / findings 
+
+syngo_antidep_ontol <- syngo_antidep_ontol %>% 
+  mutate(
+    str_and_genes = paste0(
+      `GO term name`,
+      "\n",
+      sapply(
+        strsplit(`genes - your genelist input`, ";"),
+        function(genes) { # for each gene list input 
+          n_genes <- length(genes) # get the number of genes 
+          n_lines <- ceiling(n_genes / 3) # calculate the number of line breaks which will be warranted to have three gene names per line 
+          
+          lines <- lapply(1:n_lines, function(i) { 
+            # this applies the function to each line (starting from 1 to the number of lines, like a for loop)
+            start <- (i - 1) * 3 + 1
+            # this is the starting index for the genes in the current line (from the genes vector)
+            end <- min(i * 3, n_genes)
+            # this is the end index for the current line (making sure not to exceed the total number of genes) (from the genes_vector)
+            paste(genes[start:end], collapse = "; ")
+            # indexes the genes vector and concatenates the genes for a single line
+          })
+          paste(lines, collapse = "\n")
+          # then concatenate all the lines together with a '\n'
+        }
+      )
+    )
+  )
+
+syngo_antidep_ontol_plt <- ggplot(syngo_antidep_ontol %>% filter(`GSEA count foreground/input` > 2), aes(x = str_and_genes, y = -log10(`GSEA 'gene cluster' FDR corrected p-value`), fill = as.factor(`GSEA count foreground/input`))) + geom_bar(stat = 'identity') + geom_hline(yintercept = -log10(0.05), linetype = 'dashed') + coord_flip() + scale_fill_manual(values=syngo_ontol_colors, limits = names(syngo_ontol_colors),name = 'Number of genes annotated', drop = FALSE) + labs(y = '-log10(FDR corrected P)', x = 'GO term name') + theme(legend.position = 'top') + theme_minimal() 
+
+
+knitr::include_graphics("/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/SynGO_figure__antidep_top_100_17_07__domain=location color=gene labels=second date=2023-06-17 12;44.svg")
+
+```
+
+###### Summary
+
+Save this for supplementary information: 
+
+```{r}
+
+syngo_pathway_plts <- ggarrange(syngo_selfrep_ontol_plt + ggtitle('Self Report'), syngo_antidep_ontol_plt + ggtitle('Prescription Derived'), labels = c('A', 'B'), ncol = 1, nrow = 2, common.legend = T)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/syngo_pathway_bars.png', plot = syngo_pathway_plts, width = 6, height = 8, device='png', dpi=300)
+
+```
+
+##### Presentation venn diagrams 
+
+Venn diagram of the SynGO annotated genes from the self report gene list and the prescription derived gene list 
+
+```{r}
+antidep_syngo_genes <- unique(syngo_antidep_annot$`your genelist input`)
+selfrep_syngo_genes <- unique(syngo_selfrep_annot$`your genelist input`)
+
+syngo_genes_both <- list(antidep_syngo_genes, selfrep_syngo_genes)
+names(syngo_genes_both) <- c('SR', 'PD')
+
+saveRDS(syngo_genes_both, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/SYNGO_annot_lists.rds')
+
+png(filename = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/syngo_annotated_genes_27_10.png", width = 8, height = 6, units = "in", res = 300)
+
+
+venndir(syngo_genes_both, proportional = TRUE, overlap_type="overlap", label_preset="main items", show_items = "item", item_cex = 1)
+
+dev.off()
+
+```
+
+
+##### Msigdb pathway testing 
+
+Looking at GO: Biological Processes gene sets, for all gene sets size 20-500 inclusive. 
+
+```{r}
+msigdbr_collections() %>% as.data.frame()
+msigdbr_GOBP <- msigdbr(species = "Homo sapiens", category = 'C5', subcategory = 'GO:BP')
+
+# summary of the gene sets which have more or equal than 20 and less than (or equal) 500 genes 
+msigdbr_GOBP_sum <- msigdbr_GOBP %>% 
+  group_by(gs_name) %>%
+  summarize(num_genes = n(),
+            genes = paste0(entrez_gene, collapse = ', ')) %>%
+  dplyr::filter(num_genes >= 20 & num_genes <= 500) 
+
+ggplot(msigdbr_GOBP_sum, aes(x = num_genes)) + geom_histogram() + theme_minimal() + theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12)) + labs(x = 'Number of genes in the gene set', y = 'Count')
+
+msigdbr_GOBP <- msigdbr_GOBP %>% dplyr::filter(gs_name %in% msigdbr_GOBP$gs_name)
+msigdbr_entrez_list <- split(msigdbr_GOBP$entrez_gene, msigdbr_GOBP$gs_name)
+```
+
+###### Self Report
+
+```{r}
+
+selfrep_ph3_msig_res <- gsameth(sig.cpg = selfrep_ph3_top100$Name, all.cpg = selfrep_ph3_res$Name, collection = msigdbr_entrez_list, 
+               plot.bias = TRUE, prior.prob = TRUE, sig.genes = TRUE)
+selfrep_ph3_msig_res$gs_name <- row.names(selfrep_ph3_msig_res)
+selfrep_ph3_msigdbr_plt <- ggplot(selfrep_ph3_msig_res %>% dplyr::filter(P.DE < 0.05), 
+                                  aes(x = reorder(gs_name, P.DE), y = -log10(P.DE), fill = P.DE < 0.05)) + 
+  geom_col() + 
+  coord_flip() + 
+  labs(y = '-log10(P.DE)', x = 'GO:BP Gene Set')+ 
+  theme_minimal()+
+      theme(legend.position = 'none', plot.title= element_text(face = "bold", hjust = 0.5), 
+            axis.line = element_line(color = "black"), text = element_text(size = 12))
+
+selfrep_ph3_msigdbr_plt 
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/msigdbr_selfreport.png', plot = selfrep_ph3_msigdbr_plt , width = 8, height = 12, device='png', dpi=300)
+```
+
+###### Prescription derived
+
+```{r}
+
+antidep_ph1_clean_msig_res <- gsameth(sig.cpg = anti_ph1_clean_top100$Name, all.cpg = anti_ph1_clean_res$Name, collection = msigdbr_entrez_list, 
+               plot.bias = TRUE, prior.prob = TRUE, sig.genes = TRUE)
+antidep_ph1_clean_msig_res$gs_name <- row.names(antidep_ph1_clean_msig_res)
+antidep_ph1_clean_msigdbr_plt <- ggplot(antidep_ph1_clean_msig_res %>% dplyr::filter(P.DE < 0.05), 
+                                  aes(x = reorder(gs_name, P.DE), y = -log10(P.DE), fill = P.DE < 0.05)) + 
+  geom_col() + 
+  coord_flip() + 
+  labs(y = '-log10(P.DE)', x = 'GO:BP Gene Set')+ 
+  theme_minimal()+
+      theme(legend.position = 'none', plot.title= element_text(face = "bold", hjust = 0.5), 
+            axis.line = element_line(color = "black"), text = element_text(size = 12))
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/msigdbr_antidep.png', plot = antidep_ph1_clean_msigdbr_plt , width = 10, height = 12, device='png', dpi=300)
+```
+
+#### FUMA results 
+
+##### Self report 
+
+###### Background gene list
+
+
+```{r}
+# Extracting the gene list from the array 
+# function to remove the repeated gene names ? 
+
+remove_repeated <- function(string) {
+  substrings <- str_split(string, ";")[[1]]
+  unique_substrings <- unique(substrings)
+  result <- paste(unique_substrings, collapse = ";")
+  return(result)
+}
+
+#potential background gene lists
+annot <- annot %>% mutate(UCSC_RefGene_Name_uniq = sapply(UCSC_RefGene_Name, remove_repeated))
+annot_background <- missMethyl::getMappedEntrezIDs(annot$Name, array.type = 'EPIC')
+annot_bckground_genelist <- annot_background$sig.eg
+
+epic_genelist_V12Accession <- str_split(annot$GencodeCompV12_Accession, ';') %>% unlist %>% unique %>% sort
+epic_genelist_V12Accession <- epic_genelist_V12Accession[-1]
+
+epic_genelist <- unlist(strsplit(annot$UCSC_RefGene_Name, ";")) %>% unique() %>% sort()
+readr::write_lines(epic_genelist, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/IlluminaEPICanno_genelist.txt')
+
+epic_genelist_gencode <- unlist(strsplit(annot$GencodeCompV12_NAME, ";")) %>% unique()
+epic_genelist_gencodebasic <- unlist(strsplit(annot$GencodeBasicV12_NAME, ";")) %>% unique()
+#epic_genelist,
+#UCSC_RefGene_Name
+
+### Get Ensembl gene IDs from the hgnc symbol 
+
+#searchAttributes(mart = hsmart, pattern = 'gencode')
+hsmart <- useMart(data = 'hsapiens_gene_ensembl', biomart = 'ensembl')
+mapping <- getBM(attributes = c('ensembl_gene_id','ensembl_transcript_id', 'hgnc_symbol', 'entrezgene_id', 'transcript_gencode_basic'),
+                 filters = c('ensembl_transcript_id'),
+                 values = epic_genelist_V12Accession,
+                 mart = hsmart,
+                 checkFilters = FALSE)
+
+
+epic_annot_lists <- list( epic_genelist_gencode, epic_genelist_gencodebasic)
+names(epic_annot_lists) <- c( 'GencodeCompV12_NAME', 'GencodeBasicV12_NAME')
+
+upset(fromList(epic_annot_lists), nsets = 2, text.scale = c(2,2,2,2.3,2,3))
+
+readr::write_lines(epic_genelist_gencode, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/IlluminaEPICanno_GENCODE_genelist.txt')
+
+readr::write_lines(epic_genelist_V12Accession, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/IlluminaEPICanno_V12_Accession_12_02.txt')
+readr::write_lines(annot_bckground_genelist, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/IlluminaEPICanno_ENTREZ_17_02.txt')
+
+
+
+readr::write_lines(epic_genelist, 'edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/Illumina_EPICanno_genelist.txt')
+
+
+
+
+```
+
+###### Tissue Specificity 
+
+Background gene set (all which could be annotated to the Illumina array) 
+
+```{r}
+# the 54 tissue types 
+selfrep_FUMA_DEG_custom <- read_table('/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/FUMA_custombackground/FUMA_gene2func448519_selfrep_ph3/gtex_v8_ts_DEG.txt') %>% as.data.frame()
+
+selfrep_FUMA_DEG_custom %>% mutate(adjP_stanform = format(adjP, scientific = TRUE, digits = 3)) %>% dplyr::filter(Category == 'DEG.twoside') %>% dplyr::filter(adjP < 0.05) %>% arrange(adjP)
+
+selfrep_FUMA_DEG_custom %>% dplyr::filter(Category == 'DEG.twoside') %>% dplyr::filter(adjP < 0.05) %>% arrange(adjP)
+
+
+
+```
+
+
+##### Prescription Derived 
+
+###### Tissue specificity 
+
+Same custom background list 
+
+```{r}
+
+# the 54 tissue types 
+antidep_FUMA_DEG_custom <- read_table('/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/FUMA_custombackground/FUMA_gene2func448525_antidep_pheno1/gtex_v8_ts_DEG.txt') %>% as.data.frame()
+
+# the 30 general tissue types 
+antidep_FUMA_gen_DEG_custom <- read_table('/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/FUMA_custombackground/FUMA_gene2func448525_antidep_pheno1/gtex_v8_ts_general_DEG.txt') %>% as.data.frame()
+
+# significant ones (twoside)
+antidep_FUMA_DEG_custom %>% mutate(adjP_stanform = format(adjP, scientific = TRUE, digits = 3)) %>%
+dplyr::filter(Category == 'DEG.twoside') %>% dplyr::filter(adjP < 0.05) %>% arrange(adjP)
+
+
+antidep_FUMA_gen_DEG %>% filter(Category == 'DEG.twoside') %>% filter(adjP < 0.05) %>% arrange(adjP)
+
+```
+
+##### Tissue specificity venn diagrams 
+
+Venn diagrams for the tissue specificity results for self report and prescription derived findings. 
+
+```{r}
+
+antidep_tissues_sig <- antidep_FUMA_DEG %>% filter(Category == 'DEG.twoside') %>% filter(adjP < 0.05) %>% pull(GeneSet)
+
+selfrep_tissues_sig <- selfrep_FUMA_DEG %>% filter(Category == 'DEG.twoside') %>% filter(adjP < 0.05) %>% pull(GeneSet)
+
+tissues_sig_both <- list(selfrep_tissues_sig, antidep_tissues_sig)
+names(tissues_sig_both) <- c('SR', 'PD')
+
+saveRDS(tissues_sig_both, '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Data/tissue_spec_list.rds')
+
+png(filename = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/tissue_spec_venn_27_10.png", width = 8, height = 6, units = "in", res = 300)
+
+venndir(tissues_sig_both, proportional = TRUE, overlap_type="overlap", label_preset="main items", show_items = "item", item_cex = 1)
+
+dev.off()
+
+
+tissue_overlap <- intersect(selfrep_tissues_sig, antidep_tissues_sig)
+total_tissues <- 54
+
+#### Testing enrichment for the tissue specificity #### 
+
+## phyper: phyper(Overlap-1, group2, Total-group2, group1,lower.tail= FALSE)
+
+# fisher exact test (gives you more information):
+# fisher.test(matrix(c(Overlap, group2-Overlap, group1-Overlap, Total-group2-group1 +Overlap), 2, 2), alternative='greater')
+
+phyper(length(tissue_overlap)-1, length(antidep_tissues_sig), total_tissues-length(antidep_tissues_sig), length(selfrep_tissues_sig),lower.tail= FALSE)
+
+
+```
+
+#### Temporal relationships 
+
+The significant probes identified in the prescription derived and self-report MWAS have been extracted and used in this markdown already (with the control vs cases violin plots)
+
+Self reported probes = selfrep_probes_meth 
+Prescription-derived probes = antidep_pheno1_meth 
+
+##### Scatter plots 
+
+```{r}
+antidep_pheno1_meth <- read.table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/20_10_standardised_update/antidep_pheno1_probes_meth_10', header = T)
+
+selfrep_probes_meth <- read.table('edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/20_10_standardised_update/selfrep_probes_meth_10', header = T)
+
+# make a datatable which reflects whether the CpG is present in just the antidep_probes, the self rep_probes or both of them together
+
+cpg_source_tbl <- data.frame(CpG = unique(c(colnames(selfrep_probes_meth %>% dplyr::select(-c(FID, IID))), colnames(antidep_pheno1_meth %>% dplyr::select(-c(FID, IID))))))
+cpg_source_tbl <- cpg_source_tbl %>% 
+  rowwise() %>% 
+  mutate(source=case_when(
+    CpG %in% colnames(selfrep_probes_meth %>% dplyr::select(-c(FID, IID))) & CpG %in% colnames(antidep_pheno1_meth %>% dplyr::select(-c(FID, IID))) ~ 'Both',
+    CpG %in% colnames(selfrep_probes_meth %>% dplyr::select(-c(FID, IID))) & !(CpG %in% colnames(antidep_pheno1_meth %>% dplyr::select(-c(FID, IID)))) ~ 'Self report only',
+     !(CpG %in% colnames(selfrep_probes_meth %>% dplyr::select(-c(FID, IID)))) & CpG %in% colnames(antidep_pheno1_meth %>% dplyr::select(-c(FID, IID))) ~ 'Prescription only',
+    TRUE~ 'WHOOPS'
+  )) %>% as.data.frame()
+
+# adding a color column for coloring the dots and the text in the plots 
+
+cpg_source_tbl <- cpg_source_tbl %>% mutate(col = case_when(source == "Both" ~ "#B20000", source =="Self report only"~"#EF7300", source =="Prescription only" ~ "#F1B043" , TRUE ~ "WHOOPS"))
+
+antidep_pheno1_probes <- antidep_pheno1_meth %>% dplyr::select(FID, IID)
+
+# get cases
+
+antidep_pheno1_cases_preswap <- read.table('edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_ph1_cases_preswap.tsv', sep = '\t', header = T)
+
+antidep_pheno1_cases_preswap <- antidep_pheno1_cases_preswap %>% distinct(id, .keep_all = T)
+
+antidep_cases_time <- antidep_pheno1_cases_preswap %>% dplyr::select(id, time2appt)
+
+# merge with the self report identified probes 
+
+antidep_cases_time_probe <- merge(antidep_cases_time, selfrep_probes_meth, by.x = 'id', by.y = 'IID')
+
+# add the extra probe identified with the antidep 
+
+antidep_cases_time_probe <- merge(antidep_cases_time_probe, antidep_pheno1_meth %>% dplyr::select(IID, cg01964004), by.x = 'id', by.y = 'IID')
+
+
+cpg_colors <- c("Both" = "#792427", "Self report only"="#D1BDA2","Prescription only" = "#2B818E")
+
+CpG_time_plot <- function(CpG, data, xvar, color_arg) {
+  CpG_time_plt <- ggscatter(data, x = xvar, y = CpG,add = "reg.line", conf.int = F, xlab = 'Days in treatment', ylab = 'M value', alpha = 0.6, color = color_arg) + stat_cor(color ='black') + theme_minimal() + theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+ggtitle(CpG)+ scale_color_manual(name = 'Discovery MWAS',values = cpg_colors)
+
+return(CpG_time_plt)
+
+}
+
+
+
+## interesting that the dmr region identified involves the cg (identified in self report MWAS cg15071067- DGUOSK gene) and the cg (identified in the prescription-derived MWAS cg1964004), and these are the two CpGs which show correlation of time in episode and methylation levels.. 
+
+
+#### Getting the data in the long format : 
+
+
+antidep_cases_time_prob_lg <- gather(antidep_cases_time_probe, key = "probes", value = "values", -id, -time2appt, -FID)
+antidep_cases_time_prob_lg <- antidep_cases_time_prob_lg %>% rowwise %>%  mutate(source = cpg_source_tbl %>% filter(CpG == probes) %>% pull(source)) %>% as.data.frame()
+
+
+#### SPEARMAN correlations ####
+
+## The methylation values look relatively normally distributed but the time to appointment distribution is non-normal 
+
+hist(antidep_cases_time_probe$time2appt)
+
+# histograms of the distribution of all the probes 
+antidep_cases_time_prob_lg$source <- as.factor(antidep_cases_time_prob_lg$source)
+
+### save for supplementary information ###
+
+### histograms of the probes 
+
+signif_probes_info <- selfrep_ph3_res %>% filter(p < 9.42e-08) %>% select(Name, UCSC_RefGene_Name) %>% mutate(
+  UCSC_RefGene_unique= str_replace_all(UCSC_RefGene_Name, "([^;]+)(;\\1)+", "\\1")) %>% select(-UCSC_RefGene_Name)
+
+signif_probes_info <- rbind(signif_probes_info, anti_ph1_clean_appt_res  %>% filter(p < 9.42e-08) %>% select(Name, UCSC_RefGene_Name) %>% mutate(
+  UCSC_RefGene_unique= str_replace_all(UCSC_RefGene_Name, "([^;]+)(;\\1)+", "\\1")) %>% select(-UCSC_RefGene_Name))
+
+antidep_cases_time_prob_lg <- merge(antidep_cases_time_prob_lg, signif_probes_info , by.x = 'probes', by.y = 'Name')
+
+antidep_cases_time_prob_lg<- antidep_cases_time_prob_lg %>% mutate(probes_gene = paste0(probes, '-\n', UCSC_RefGene_unique))
+
+probe_hists <- ggplot(antidep_cases_time_prob_lg, aes(x = values, fill = source)) +
+    geom_histogram(binwidth = 0.05) +  # Adjust binwidth and colors as needed
+  scale_fill_manual(values = cpg_colors)+
+    facet_wrap(~probes_gene, scales = "free") +  # Facet by the "Variable" column
+    labs(x = "Value", y = "Frequency") +  # Adjust axis labels
+    theme_minimal()  
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/probe_distributions.png', plot = probe_hists, width = 10, height = 8, device='png', dpi=300)
+
+### histogram of time to appointment 
+
+time2appt_hist <- ggplot(antidep_cases_time_probe, aes(x = time2appt)) + geom_histogram(color = 'black', fill = 'lightblue') + theme_minimal() + labs(x = 'Time to appointment (days)', y = 'Count')
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/time2appt_hist.png', plot = time2appt_hist, width = 10, height = 8, device='png', dpi=300)
+
+antidep_cases_time_prob_lg$probes_gene <- as.factor(antidep_cases_time_prob_lg$probes_gene)
+
+
+### making the spearman plots each individually
+### using the wide-format data as when it is 
+### long-format it does not give the correct 
+### spearman results on the graph 
+
+cpg_colors <- c("Both" = "#792427", "Self report only"="#D1BDA2","Prescription only" = "#2B818E")
+
+spearman_cor_plot <- function(results, cpg) {
+  gene_name <- antidep_cases_time_prob_lg %>% filter(probes == cpg) %>% pull(UCSC_RefGene_unique) %>% unique()
+  discovery <- antidep_cases_time_prob_lg %>% filter(probes == cpg) %>% pull(source) %>% unique()
+  color_plot <- cpg_colors[[discovery]]
+  probe_spearman <- ggplot(results, aes(x = time2appt, y = !!sym(cpg), color = color_plot)) +
+  geom_point(alpha = 0.6, color = color_plot) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +  # Adding dashed regression line
+  stat_cor(method = "spearman", cor.coef.name = "rho", color = "black") +
+  theme_minimal() +
+  theme(legend.position = "none", 
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(color = "black"),
+        text = element_text(size = 12)) + ggtitle(paste0(cpg, '-\n', gene_name)) +  scale_color_manual(values = cpg_colors, limits =names(cpg_colors), name = "Discovery")
+  
+  return(probe_spearman)
+}
+
+## run this for each of the cpgs 
+
+cpg_spearman_plots <- list()
+
+for (i in 1:length(colnames(antidep_cases_time_probe)[4:11])){
+  cpg <- colnames(antidep_cases_time_probe)[3+i]
+  cpg_spearman_plots[[i]] <- spearman_cor_plot(antidep_cases_time_probe, cpg)
+}
+
+ggarrange(plotlist=cpg_spearman_plots)
+
+## manually add a figure legend to this plot 
+
+
+
+
+### table of the spearman results ##
+
+spearman_test <- cor.test(antidep_cases_time_probe$time2appt, antidep_cases_time_probe$cg15071067, method = 'spearman')
+
+spearman_results <- data.frame(
+  Probe = character(),
+  S_Statistic = numeric(),
+  Spearman_Rho = numeric(),
+  P_Value = numeric()
+)
+
+for (i in 1:length(antidep_cases_time_probe %>% select(starts_with("cg")) %>% colnames())) {
+  probe_col <- (antidep_cases_time_probe %>% select(starts_with("cg")) %>% colnames())[i]
+  spearman_test <- cor.test(antidep_cases_time_probe[, probe_col], antidep_cases_time_probe[, "time2appt"], method = 'spearman')
+  spearman_results[i, "Probe"] <- probe_col
+  spearman_results[i, "S_Statistic"] <- spearman_test$statistic
+  spearman_results[i, "Spearman_Rho"] <- spearman_test$estimate
+  spearman_results[i, "P_Value"] <- spearman_test$p.value
+}
+
+spearman_results <- merge(spearman_results, cpg_source_tbl %>% select(CpG, source), by.x = "Probe", by.y = "CpG")
+
+spearman_results <- merge(spearman_results, antidep_cases_time_prob_lg %>% select(probes, probes_gene) %>% distinct(), by.x = 'Probe', by.y = 'probes')
+
+spearman_results <- merge(spearman_results, antidep_cases_time_prob_lg %>% group_by(probes_gene) %>% summarise(max = max(values)) %>% as.data.frame(), by = 'probes_gene')
+rho_symbol <- intToUtf8(0x03C1)
+spearman_results <- spearman_results %>% mutate(formula= paste0(rho_symbol, "=", round(Spearman_Rho,3), ", p =", round(P_Value, 3)))
+
+probe_cor_plots <- ggplot(antidep_cases_time_prob_lg, aes(x = time2appt, y = values)) +
+  geom_point(aes(color = source), alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +  # Adding dashed regression line
+  scale_color_got_d(option = "Daenerys") +
+  theme_minimal() +
+  theme(legend.position = "right", 
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        axis.line = element_line(color = "black"),
+      
+        text = element_text(size = 12)) +
+  
+  
+  # Add facet_wrap to separate plots by CpG
+  facet_wrap(~ probes_gene, scales = 'free',ncol = 3)+geom_text(spearman_results %>% dplyr::select(probes_gene, formula, max), mapping = aes(x = 100, y = max-1, label = formula, hjust = -0.1, vjust = -1))
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/time_probe_spearman_scatter.png', plot = probe_cor_plots, width = 10, height = 8, device='png', dpi=300)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/probe_histograms.png', plot = probe_hists
+, width = 8, height = 10, device='png', dpi=300)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/time2appt_histogram.png', plot = time2appt_hist 
+, width = 8, height = 10, device='png', dpi=300)
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/probe_cor_spearman_plots.png', plot = probe_cor_plots, width = 10, height = 8, device='png', dpi=300)
+
+
+```
+
+##### GS demographics 
+
+```{r}
+GS_bmi_cases <- 28.2
+GS_bmi_controls <- 26.4
+
+
+meanbmi_overall_GS <- (sum((GS_bmi_cases*1508), (GS_bmi_controls *15028)))/(15028+1508)
+
+# proportion of current smokers
+
+(2448+402)/(15028+1508)
+
+```
+
+### Diabetes and MDD overlap 
+
+```{r}
+# copied this file from the data folder 
+#/exports/igmm/datastore/GenScotDepression/data/genscot/phenotypes
+
+# double check with Rob about diabetes file, and then just look at the overlap with the MDD -- is there a statistical test to say whether the cases/controls have more diabetes in them? 
+
+diabetes <- read.csv('edavyson/Antidep_methylation/diabetes.csv', header = T)
+
+diabetes_rob <- read.table('edavyson/Antidep_methylation/diabetes.phen', header = T)
+
+target_file <- readRDS('edavyson/Antidep_methylation/data/GS20k_Targets.rds')
+diabetes_rob <- merge(diabetes_rob, target_file %>% select(Sample_Name, Sample_Sentrix_ID), by.x = 'IID', by.y = 'Sample_Sentrix_ID')
+
+scid_diabetes <- merge(scid_pheno, diabetes_rob %>% select(c(Sample_Name, phen)), by.x = 'IID', by.y = 'Sample_Name')
+
+scid_diabetes <- scid_diabetes %>% mutate(scid_name = case_when(scid==0 ~'Not MDD', scid==1~ 'MDD',TRUE ~ NA), diabetes = case_when(phen==0 ~ "No Diabetes", phen==1 ~ "T2 Diabetes", TRUE ~ NA))
+contingency_table <- table(scid_diabetes$scid_name, scid_diabetes$diabetes)
+
+print(contingency_table)
+
+chisq.test(contingency_table)
+```
+
+### Standardisation of probes 
+
+Sanity checking what --std-probe flag in OSCA does, I assume it is minusing the mean and then dividing by the standard deviation. So extract probes from the OSCA bod format which has been standardised and the format which has not been standardised. 
+
+Pick random probes:  "cg23043438" "cg22407458" "cg07703401" "cg06243556" "cg19125323" "cg06038049"
+Save as a text file
+Extract these probes from the standardised file : osca --befile mvals_GRM_uncorrected_29_06_OSCA_standard --extract-probe test_probes.txt --make-efile --out test_probe_standard
+and Unstandardised file : osca --befile mvals_GRM_uncorrected_29_06_OSCA_noAHRR --extract-probe test_probes.txt --make-efile --out test_probe_unstandard
+osca --
+
+```{r}
+probes <- read_table('edavyson/Antidep_methylation/probe_test/test_probe_unstandard') %>% as.data.frame()
+standard_probes <-  read_table('edavyson/Antidep_methylation/probe_test/test_probe_standard') %>% as.data.frame()
+
+# look at one probe to begin with 
+# create CpG columns with scaled() data in R 
+
+probes <- probes %>%
+  mutate_at(vars(starts_with("cg")), list(scaledR = ~scale(.)))
+
+colnames(probes)[3:8] <- paste0(colnames(probes)[3:8],"_unstandardised")
+
+standard_probes <- standard_probes %>% rename_with(~paste0(., "_stdOSCA"), starts_with("cg"))
+
+probes_wide <- merge(probes, standard_probes, by = c('FID', 'IID'))
+
+probes_long <- probes_wide %>% 
+  pivot_longer(-c(FID, IID),
+               names_to = c(".value", "Data"), 
+               names_sep = "_")
+
+probes_long_long <- probes_long %>% pivot_longer(-c(FID, IID, Data), names_to = "CpG") %>% as.data.frame()
+
+ggplot(probes_long_long, aes(x = value, fill = CpG)) + geom_histogram() + facet_grid(Data~CpG)
+
+```
+
+
+### Supplementary Tables 
+
+```{r}
+# load the excel file for adding sheets of other tables 
+supp_wb <- loadWorkbook('/Users/ellad/UniversityEdinburgh/PhD/Year 2/Methylation_antidep_writing/supp_tables_27_10.xlsx')
+
+sheet_names <- getSheetNames('/Users/ellad/UniversityEdinburgh/PhD/Year 2/Methylation_antidep_writing/supp_tables_27_10.xlsx')
+
+# if statements to account for overwriting (if I want to add more columns etc I don't want it to be a new sheet, just to overwrite the old one)
+
+# third 
+###########################################################
+
+# MWAS results 
+
+###########################################################
+
+# Significant probes found in the prescrption-derived MWAS (4 probes)
+if (!("Significant_PD_MWAS" %in% sheet_names)) {
+  addWorksheet(supp_wb, "Significant_PD_MWAS")
+}
+writeData(supp_wb,"Significant_PD_MWAS", anti_ph1_signif_supp)
+
+# Significant probes found in the self-report MDD only MWAS (1 probe)
+
+if (!("Significant_SR_MDD_only_MWAS" %in% sheet_names)) {
+  addWorksheet(supp_wb, "Significant_SR_MDD_only_MWAS")
+}
+writeData(supp_wb,"Significant_SR_MDD_only_MWAS", selfrep_ph4_signif_supp)
+
+###########################################################
+
+# DMR results 
+
+###########################################################
+
+# DMRs found in self report results (consisting of 2 or more CpGs)
+
+
+if (!("SR_DMRs" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_DMRs")
+}
+
+writeData(supp_wb,"SR_DMRs", selfrep_pheno3_dmr %>% arrange(p.adjust))
+
+# DMRs found in the prescription derived results (consisting of 2 or more CpGs)
+
+if (!("PD_DMRs" %in% sheet_names)) {
+  addWorksheet(supp_wb, "PD_DMRs")
+}
+
+writeData(supp_wb,"PD_DMRs", antidep_pheno1_dmr %>% arrange(p.value) %>% head(100))
+
+###########################################################
+
+# top 100 CpGs and gene sets 
+
+###########################################################
+
+# top 100 CpGs from self report analysis 
+if (!("top_100_SR_CpGs" %in% sheet_names)) {
+  addWorksheet(supp_wb, "top_100_SR_CpGs")
+}
+writeData(supp_wb,"top_100_SR_CpGs", selfrep_ph3_top100)
+
+# the genes mapped to the top CpGs and how many CpGs matched to them (self-report)
+
+if (!("top_SR_genes_cpg_match" %in% sheet_names)) {
+  addWorksheet(supp_wb, "top_SR_genes_cpg_match")
+}
+writeData(supp_wb,"top_SR_genes_cpg_match", selfrep_ph3_top_genes_df %>% arrange(desc(num_cpgs)))
+
+# the top 100 CpGs from the prescription derived analysis 
+
+if (!("top_100_PD_CpGs" %in% sheet_names)) {
+  addWorksheet(supp_wb, "top_100_PD_CpGs")
+}
+writeData(supp_wb,"top_100_PD_CpGs", anti_ph1_clean_top100)
+
+if (!("top_PD_genes_cpg_match" %in% sheet_names)) {
+  addWorksheet(supp_wb, "top_PD_genes_cpg_match")
+}
+writeData(supp_wb,"top_PD_genes_cpg_match", anti_ph1_clean_top_genes_df %>% arrange(desc(num_cpgs)))
+
+###########################################################
+
+# synGO results 
+
+###########################################################\
+
+# annotated genes for self-report gene set 
+
+if (!("SR_synGO_annotations" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_synGO_annotations")
+}
+writeData(supp_wb,"SR_synGO_annotations", syngo_selfrep_annot)
+
+# SynGO gene ontology results (for those with annotated genes in the GO )
+if (!("SR_synGO_ontologies" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_synGO_ontologies")
+}
+
+writeData(supp_wb,"SR_synGO_ontologies", syngo_selfrep_ontol %>% filter(!is.na(`genes - your genelist input`)) %>% arrange(`GSEA 'gene cluster' FDR corrected p-value`) %>% select(-c(str_and_genes)))
+
+# annotated genes for the Prescription derived gene set 
+
+if (!("PD_synGO_annotations" %in% sheet_names)) {
+  addWorksheet(supp_wb, "PD_synGO_annotations")
+}
+writeData(supp_wb,"PD_synGO_annotations", syngo_antidep_annot)
+
+# SYnGO gene ontology prescription derived  (for those with annotated genes in the GO)
+
+if (!("PD_synGO_ontologies" %in% sheet_names)) {
+  addWorksheet(supp_wb, "PD_synGO_ontologies")
+}
+
+writeData(supp_wb,"PD_synGO_ontologies", syngo_antidep_ontol %>% filter(!is.na(`genes - your genelist input`)) %>% arrange(`GSEA 'gene cluster' FDR corrected p-value`) %>% select(-c(str_and_genes)))
+
+
+###########################################################
+
+# Immport pathways 
+# not including in the paper anymore so do not run these lines 
+
+###########################################################\
+
+# description of pathways 
+
+if (!("Immport_pathways" %in% sheet_names)) {
+  addWorksheet(supp_wb, "Immport_pathways")
+}
+
+writeData(supp_wb,"Immport_pathways", summary_immport)
+
+#self report pathway results 
+
+if (!("SR_immport" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_immport")
+}
+
+writeData(supp_wb,"SR_immport", gst_selfrep_pheno3_immport %>% mutate(pathway = row.names(.)) %>% select(pathway, everything()))
+
+# prescription derived pathway results 
+
+if (!("PD_immport" %in% sheet_names)) {
+  addWorksheet(supp_wb, "PD_immport")
+}
+
+writeData(supp_wb,"PD_immport", gst_antidep_pheno1_immport %>% mutate(pathway = row.names(.)) %>% select(pathway, everything()))
+
+###########################################################
+
+# Msigdbr pathways 
+
+###########################################################\
+
+# description of pathways 
+
+if (!("Msigdbr_pathways" %in% sheet_names)) {
+  addWorksheet(supp_wb, "Msigdbr_pathways")
+}
+
+writeData(supp_wb,"Msigdbr_pathways", msigdbr_GOBP_sum)
+
+#self report pathway results 
+
+if (!("SR_msig_GOBP" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_msig_GOBP")
+}
+
+writeData(supp_wb,"SR_msig_GOBP", selfrep_ph3_msig_res %>% dplyr::select(gs_name, everything()) %>% arrange(P.DE))
+
+# prescription derived pathway results 
+
+if (!("PD_msig_GOBP" %in% sheet_names)) {
+  addWorksheet(supp_wb, "PD_msig_GOBP")
+}
+
+writeData(supp_wb,"PD_msig_GOBP", antidep_ph1_clean_msig_res %>% dplyr::select(gs_name, everything()) %>% arrange(P.DE))
+
+
+###########################################################
+
+# FUMA tissue specificity 
+
+###########################################################\
+# Background list of genes used for FUMA 
+
+if (!("Background_genes_FUMA" %in% sheet_names)) {
+  addWorksheet(supp_wb, "Background_genes_FUMA")
+}
+
+writeData(supp_wb,"Background_genes_FUMA", epic_genelist)
+
+
+#self-report FUMA 54 tissues results
+
+if (!("SR_FUMA" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_FUMA")
+}
+
+writeData(supp_wb,"SR_FUMA", selfrep_FUMA_DEG %>% arrange(adjP))
+
+# custom background list
+if (!("SR_FUMA_CUSTOM" %in% sheet_names)) {
+  addWorksheet(supp_wb, "SR_FUMA_CUSTOM")
+}
+
+writeData(supp_wb,"SR_FUMA_CUSTOM", selfrep_FUMA_DEG_custom %>% arrange(adjP))
+
+# prescription derived FUMA 54 tissues results 
+
+if (!("PD_FUMA_CUSTOM" %in% sheet_names)) {
+  addWorksheet(supp_wb, "PD_FUMA_CUSTOM")
+}
+
+writeData(supp_wb,"PD_FUMA_CUSTOM", antidep_FUMA_DEG_custom %>% arrange(adjP))
+
+###########################################################
+
+# Correlation stats
+
+###########################################################
+
+if (!("time_probe_cor" %in% sheet_names)) {
+  addWorksheet(supp_wb, "time_probe_cor")
+}
+
+writeData(supp_wb,"time_probe_cor", spearman_results)
+
+
+# save the sheets 
+saveWorkbook(supp_wb, '/Users/ellad/UniversityEdinburgh/PhD/Year 2/Methylation_antidep_writing/supp_tables_27_10.xlsx', overwrite=T)
+```

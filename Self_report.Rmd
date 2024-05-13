@@ -1,0 +1,540 @@
+---
+title: "Self_rep_meds"
+author: "Ella Davyson"
+date: "25/04/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Self report antidepressant phenotype {.tabset}
+
+
+```{r libraries, include = FALSE}
+
+## getting the distribution of self reported medications ##
+# libraries 
+
+library(readr)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(stringi)
+library(tidyr)
+library(ggplot2)
+
+```
+
+
+Version 2 Questionnaire: Free text where people could write down the medications they were taking in ten different pills columns (also columns for inhalers, injections and ointments) (n = 9924)
+
+Version 5 Questionnaire: Tick box for medication categories, i.e are you on antidepressants? Yes/No (n = 13675)
+
+Idea is really to covert the Q2 data to something similar to Q5 data, so people who report an antidepressant in the V2 data will be classed as a case ("Yes") and those who don't are not ("No").
+
+```{r reading_in_raw_data}
+
+# read in the v2 and v5 medication table to have a look 
+# the version 2 questionnaire gave free text options for people to write down what medications they were on 
+# n = 9924
+
+meds_v2 <- read_csv('/Volumes/igmm/GenScotDepression/data/genscot/phenotypes/medicationv2.csv') %>% as.data.frame()
+
+# Rscript with some indications for the medications (from the medication_intermediate_step.R script)
+
+meds_v2_ind <- read_csv('/Volumes/igmm/GenScotDepression/data/genscot/phenotypes/medication_cleanup/medications_v2_QC_gwasids.csv') %>% as.data.frame()
+
+meds_v2 <- read_csv('/Volumes/igmm/GenScotDepression/data/genscot/phenotypes/medicationv2.csv') %>% as.data.frame()
+
+# the version 5 questionnaire just was a tick box for medication classes that people may be on
+# n = 13675
+
+meds_v5 <- read_csv('/Volumes/igmm/GenScotDepression/data/genscot/phenotypes/medicationv5.csv') %>% as.data.frame()
+
+```
+
+Looking at the data: 
+
+Noticed that there are 2 people who are present in both the V2 and V5 questionnaire- when theoretically they should have done one or the other? 
+
+FLAG this, potentially remove them as duplicates? Niether of them report antidepressants in V2 or V5. 
+
+In the medications table, which was a merged V2 and v5 table made from the medications_intermediate_step.R script on datastore, there are 21853 cases and 1746 controls for the self reported antidepressants. 
+
+```{r}
+# thought every person took either v2 or v5 questionnaire, but there seems to be 2 people who are present in both the questionniare results 
+
+table(meds_v2$ID %in% meds_v5$ID)
+meds_v2 %>% filter(ID %in% meds_v5$ID)
+meds_v5 %>% filter(ID %in% meds_v2$ID)
+
+## look at the number of people in each 
+
+nrow(meds_v2)
+nrow(meds_v5)
+
+
+# the antidep column is coded if there was ANTIDEPRESSANT in any of the indication columns 
+# then it was coded as a '1'
+# spotted some strange inconsistencies previously, so look directly at cases and controls 
+
+# this is the meds table which should be v2 and v5 merged.. some inconsistencies with Miruna's file though
+table(meds$antidep)
+
+antidep_cases <- meds %>% filter(antidep == 1) #  n = 1746
+antidep_controls <- meds %>% filter(antidep == 0) # n = 21853
+
+```
+
+Deriving the antidepressant exposure variable from version 2 (the free text). Got a list of the antidepressants to look for from https://openprescribing.net/bnf/040304/. 
+
+The number of cases defined from version 2 previously was n = 712. 
+
+
+```{r deriving_antidep_v2}
+
+# list of all antidepressant medications 
+# from the prescribing website 
+# https://openprescribing.net/bnf/040304/
+
+# the idea here is to check that every person defined as a case has reported one of these medications (if they are in v2)
+
+antidep_cases_v2 <- antidep_cases %>% filter(gwasID %in% meds_v2$ID) # n = 712 # the number of cases identified previously
+  
+```
+
+### Antidepressants 
+
+These are from the British National Formulary (BNF) website. Have removed Flupentixol from the Other list as this is commonly prescribed for psychosis (not depression), after speaking to Andrew. 
+
+```{r antidep_vectors}
+# separate vectors for each type
+Tricyclic_antidep <- c(".*A(M|N)(M)?(I|Y|A)TR(IP)?(T(A)?|TT)?(Y)?(PT(Y|A)?)?(L|LL|I(LE)?|IL)?((A)?I|E|II)?(NE|YN|TYLE)?.*", ".*AMOXAPINE.*", ".*CLOMI(M)?PRA(M|N)INE.*", 
+  ".*DOSULEPIN.*", ".*DOXEPIN.*", ".*IM(I|A)PR(A|I)MINE.*", 
+  ".*LOFEPRAMINE.*", ".*MAPROTILINE.*", 
+  ".*MIANSERIN.*", ".*NORTRIPTYLINE.*", ".*TR(A|O)Z(O|A)DONE.*", 
+  ".*TRIMIPRAMINE MALEATE.*", ".*DOTHIEPIN.*", ".*SINEPIN.*")
+
+MAO_antidep <- c(".*ISOCARBOXAZID.*", ".*MOCLOBEMIDE.*", 
+  ".*PHENELZINE.*", ".*TRANYLCYPROMINE.*")
+
+SSRI_antidep <- c(".*C(I|E|Y)(T|L)(R)?(A)?(L|T)?((T)?O|A|I)P(R|K|L)?(A|I)(M|N).*", ".*(C(I|E|Y)(T|L)(R)?(A|LTO)?(OL|L(O)?|T(OL)?)?((T)?O|A|I)P(R|K|L|H)?(A|I)(M|N)|CIPRAMIL).*",
+  ".*DULOXETINE.*", ".*ESCITALOPRAM.*", ".*FL(U|O)?(R)?(O|X|E|OK)?(X|O|EX)(O|C|A)?(E|I)?T(E)?INE.*",
+  ".*(FLUVOXAMINE(MALEATE)?|FAVRIN|LUVOX).*", ".*P(A|E)ROX(E|A|I)?T(I|E)NE.*", 
+  ".*SERTRALINE.*", ".*PRO(Z|S)AC.*", ".*S(E|A)ROX(T)?AT.*", ".*C(I|Y)PRALEX.*", ".*PAXIL.*", ".*CIPRAMIL.*", ".*ATENIX.*", ".*CYMBALTA.*")
+other_antidep <- c(".*AGOMELATINE.*", ".*DULOXETINE.*", ".*(M(I|A)RT(R)?AZ(A|I)P(I|E)NE|ZISP(E|I)N).*", ".*NEFAZODONE.*", 
+  ".*OXITRIPTAN.*", ".*REBOXETINE.*", ".*TRYPTOPHAN.*", ".*VEN(L)?AF(L)?(A|E)(X|Z)(Z)?IN(E)?.*", ".*EF(F)?EXOR.*",
+  ".*VORTIOXETINE.*")
+
+
+# pasting all the antidepressant names together
+antidep_names <- c(Tricyclic_antidep, MAO_antidep, SSRI_antidep, other_antidep)
+# pasting a "|' between them so recognised by regex to look for ANY of the strings to match on 
+antidep_names <- paste(antidep_names, collapse = "|")
+
+```
+
+Detecting those who have an antidepressant reported in any one of the pills columns, by matching to a list of regex expresssions (above)
+
+```{r detecting_antidep_report}
+# establish cases based on those who have any antidepressant name (including misspellings hopefully in any of the columns which have 'pills' in their name, i.e pills1-10)
+
+# for each of these cases, establish where the antidepressant is in the dataset 
+# i.e which pill column 
+# then pull out what medication it is 
+
+# explanation of the function 
+# antidep column is applying the 'any' function to every row, first selecting all columns 
+# in the meds_v2 data which contain "pills" and seeing if there is any value 
+# in the row which matches any of the strings in the regex expression
+# then the column antidep_column will be a string vector of the column names 
+# for which the antidepressant was present (i.e pills 1)
+# the column antidep_name will be a string vector of the antidepressant names 
+# and the column antidep will be a numeric 1/0, 1 being for every participant 
+# with at least 1 antidepressant 
+
+meds_v2_antidep <- meds_v2 %>% 
+  mutate(antidep_column = case_when(
+    apply(select(., contains("pills")), 1, function(x) any(str_detect(x, antidep_names))) ~ 
+      apply(select(., contains("pills")), 1, function(x) {
+        matching_cols <- names(x[which(str_detect(x, antidep_names))])
+        paste(matching_cols, collapse = ", ")
+      }), TRUE ~ ""), antidep_name = case_when(
+        apply(select(., contains("pills")), 1, function(x) any(str_detect(x, antidep_names))) ~ 
+           apply(select(., contains("pills")), 1, function(x) {
+             matching_names <-x[which(str_detect(x, antidep_names))]
+             paste(matching_names, collapse = ", ")
+             }),
+    TRUE ~ ""), antidep_derived = case_when(
+      apply(select(., contains("pills")), 1, function(x) any(str_detect(x, antidep_names))) ~ 1, TRUE ~ 0
+    ))
+  
+```
+
+Looking at the medications which have been flagged by this technique (matching antidepressant names using regex expressions). The number of antidepressant cases in this is n = 794. 
+
+```{r antidep_cases}
+# the antidepressant medications which are identified in the cases using my approach
+
+table(meds_v2_antidep$antidep_name) %>% as.data.frame() %>% arrange(Freq)
+
+# the number of cases 
+
+table(meds_v2_antidep$antidep_derived) # n cases = 794 (82 more than the meds table)
+
+```
+
+Few people are reporting more than 1 antidepressant (n = 30 for reporting 2, and n = 1 for reporting 3 )
+
+```{r num_antidepressants}
+# make a column for whether people are reporting multiple antidepressants 
+# the str_count is counting the number of commas in the string 
+# so +1 to get the number of entries 
+
+meds_v2_antidep <- meds_v2_antidep %>% mutate(num_antidep = str_count(antidep_name,  ',')+1)
+
+```
+
+Investigating the distribution of antidepressants and antidepressant types: 
+ 
+```{r}
+# separate out the antidepressants into different columns (some had 2 and 1 had 3 )
+# replace the NA values with '' so we can play with str_detect() later on
+
+meds_v2_antidep <- meds_v2_antidep %>% mutate(separate(., antidep_name, c("antidep_1", "antidep_2", "antidep_3"), sep = ','), across(c("antidep_1", "antidep_2", "antidep_3"), ~replace_na(., '')))
+
+#The number of antidepressants which are reported for each person (mostly one each, 30 with 2 prescribed each 
+# and 1 with 3 prescribed)
+
+table(meds_v2_antidep$num_antidep)
+
+# all the ones which have reported the same medication twice but different strengths 
+# convert to just one reporting of the same name 
+# to make it easier to visualise the distribution of different drugs etc 
+
+standardise_names <- function(drug_name) {
+# dictionary of the regex expressions to detect drugs linked to the standardised drug name 
+drug_names_match <- list(
+  ".*A(M|N)(M)?(I|Y|A)TR(IP)?(T(A)?|TT)?(Y)?(PT(Y|A)?)?(L|LL|I(LE)?|IL)?((A)?I|E|II)?(NE|YN|TYLE)?.*" = "AMITRIPTYLINE", 
+  ".*AMOXAPINE.*" = "AMOXAPINE", 
+  ".*CLOMI(M)?PRA(M|N)INE.*" = "CLOMIPRAMINE", 
+  ".*(DOSULEPIN|DOTHIEPIN).*" = "DOSULEPIN", 
+  ".*(DOXEPIN|SINEPIN).*" = "DOXEPIN", 
+  ".*IM(I|A)PR(A|I)MINE.*" = "IMIPRAMINE", 
+  ".*LOFEPRAMINE.*" = "LOFEPRAMINE",
+  ".*MAPROTILINE.*" = "MAPROTILINE", 
+  ".*MIANSERIN.*" = "MIANSERIN", 
+  ".*NORTRIPTYLINE.*" = "NORTRIPTYLINE",
+  ".*TR(A|O)Z(O|A)DONE.*" = "TRAZODONE", 
+  ".*TRIMIPRAMINE MALEATE.*" = "TRIMIPRAMINE", 
+  ".*ISOCARBOXAZID.*" = "ISOCARBOXAZID",
+  ".*MOCLOBEMIDE.*" = "MOCLOBEMIDE", 
+  ".*PHENELZINE.*" = "PHENELZINE",
+  ".*TRANYLCYPROMINE.*" = "TRANYLCYPROMINE", 
+  ".*(C(I|E|Y)(T|L)(R)?(A|LTO)?(OL|L(O)?|T(OL)?)?((T)?O|A|I)P(R|K|L|H)?(A|I)(M|N)|CIPRAMIL).*" = "CITALOPRAM",
+  ".*(DULOXETINE|CYMBALTA).*" = "DULOXETINE",
+  ".*(ESCITALOPRAM|C(I|Y)PRALEX).*" = "ESCITALOPRAM",
+  ".*(FL(U|O)?(R)?(O|X|E|OK)?(X|O|EX)(O|C|A)?(E|I)?T(E)?INE|PRO(Z|S)AC).*" = "FLUOXETINE",
+  ".*(FLUVOXAMINE(MALEATE)?|FAVRIN|LUVOX).*" = "FLUVOAMINE MALEATE",
+  ".*(P(A|E)ROX(E|A|I)?T(I|E)NE|S(E|A)ROX(T)?AT|PAXIL).*" = "PAROXETINE", 
+  ".*(SERTRALINE|ATENIX).*" = "SERTRALINE",
+  ".*AGOMELATINE.*" = "AGOMELATINE",
+  ".*DULOXETINE.*" = "DULOXETINE", 
+  ".*(FLUPENTIXOL|FLUANXOL).*" = "FLUPENTIXOL",
+  ".*(M(I|A)RT(R)?AZ(A|I)P(I|E)NE|ZISP(E|I)N).*" = "MIRTAZAPINE",
+  ".*NEFAZODONE.*" = "NEFAZODONE", 
+  ".*OXITRIPTAN.*" = "OXITRIPTAN", 
+  ".*REBOXETINE.*" = "REBOXETINE",
+  ".*TRYPTOPHAN.*" = "TRYPTOPHAN",
+  ".*(VEN(L)?AF(L)?(A|E)(X|Z)(Z)?IN(E)?|EF(F)?EXOR).*" = "VENLAFAXINE",
+  ".*VORTIOXETINE.*" = "VORTIOXETINE")
+
+
+matched_drugs <- lapply(names(drug_names_match), function(regex) {
+  if(str_detect(drug_name, regex)) {
+    return(drug_names_match[[regex]])
+  }
+})
+
+matched_drugs_vec <- unlist(matched_drugs)
+
+  if (is.null(matched_drugs_vec[1])) {
+    return(NA_character_)
+  } else {
+    return(matched_drugs_vec[1])
+  }
+}
+
+
+# converting all the antidepressants to be the same name 
+# replacing the NA with '' so we can use str_detect in the antidepressant 
+# type function
+
+meds_v2_antidep <- meds_v2_antidep %>% rowwise() %>% mutate(standard_antidep_1 = standardise_names(antidep_1), standard_antidep_2 = standardise_names(antidep_2), standard_antidep_3 = standardise_names(antidep_3), across(starts_with("standard_antidep"), ~replace_na(., ''))) %>% as.data.frame() 
+
+# focus on the antidep_1 column for now (even those with 2 or 3 reported will have 1)
+# looking at the distribution of medications for antidepressant 1 
+
+table(meds_v2_antidep$standard_antidep_1)
+# create a table for supplementary of the medications - removing those which do not name one (='')
+meds_v2_names <- meds_v2_antidep %>% group_by(standard_antidep_1) %>% summarise(n = n()) %>% filter(standard_antidep_1 != '')
+```
+
+Establish whether those taking more than one antidepressant (30 taking 2) have reported the same medication twice or whether reporting different medications (mostly different)
+
+```{r}
+# establish those with 2 antidepressants, whether they are reporting the same ones (or maybe different strengths of medications)
+# most of those on more than one medications were mostly on different, but some reported the same but 
+# different dosages 
+ 
+meds_v2_antidep %>% filter(num_antidep == 2) %>% mutate(same_meds = case_when(standard_antidep_1 == standard_antidep_2 ~ "same", TRUE ~ "different")) %>% select(same_meds) %>% table()
+
+# establish what type of antidepressant it was 
+
+antidepressant_type <- function(drug) {
+  drug_antidep_type <- list("AMITRIPTYLINE|AMOXAPINE|CLOMIPRAMINE|DOSULEPIN|DOXEPIN|IMIPRAMINE|LOFEPRAMINE|MAPROTILINE|MIANSERIN|NORTRIPTYLINE|TRAZODONE|TRIMIPRAMINE" = "TCAs", 
+                            "ISOCARBOXAZID|MOCLOBEMIDE|PHENELZINE|TRANYLCYPROMINE" = "MAOs", 
+                            "CITALOPRAM|DULOXETINE|ESCITALOPRAM|FLUOXETINE|FLUVOAMINE MALEATE|PAROXETINE|SERTRALINE" = "SSRIs", 
+                            "AGOMELATINE|DULOXETINE|FLUPENTIXOL|MIRTAZAPINE|NEFAZODONE|OXITRIPTAN|REBOXETINE|TRYPTOPHAN|VENLAFAXINE|VORTIOXETINE"= "Other")
+  
+  drug_type <- lapply(names(drug_antidep_type), function(regex) {
+  if(str_detect(drug, regex)) {
+    return(drug_antidep_type[[regex]])
+  }
+})
+  drug_type <- unlist(drug_type)
+
+  if (is.null(drug_type[1])) {
+    return(NA_character_)
+  } else {
+    return(drug_type[1])
+  }
+  
+}
+
+# establish what type of antidepressant they are on (for the reported v2)
+
+meds_v2_antidep <- meds_v2_antidep %>% rowwise() %>% mutate(antidep_type_1 = antidepressant_type(standard_antidep_1)) %>% as.data.frame()
+
+# establish the distribution of the antidepressant types 
+
+table(meds_v2_antidep$antidep_type_1, useNA = 'always')
+table(meds_v2_antidep %>% filter(!is.na(antidep_type_1)) %>% select(standard_antidep_1))
+```
+
+
+Separating out the table into cases and controls 
+
+```{r}
+# separate into cases and controls 
+
+meds_v2_cases <- meds_v2_antidep %>% filter(antidep_derived == 1)
+meds_v2_controls <- meds_v2_antidep %>% filter(!(ID %in% meds_v2_cases$ID))
+
+
+# this is for eyeballing whether there are any antidepressant medications in the controls 
+# and the cases, although this is messy as picks out all the unique values
+
+#meds_v2_controls %>% select(contains('pills')) %>% lapply(unique)
+#meds_v2_cases %>% select(contains('pills')) %>% lapply(unique)
+```
+
+Graphical visuals of the distribution of medications and medication types in the cases : 
+
+```{r}
+
+antidep_overview <- ggplot(meds_v2_cases, aes(x = standard_antidep_1, fill = antidep_type_1, group = antidep_type_1)) + geom_bar(stat="count") + coord_flip() + labs(y = 'Count', x = 'Antidepressant') + geom_text(aes(label = after_stat(count)), hjust = -0.5, stat = "count") + ylim(0,250)+theme_minimal() + scale_fill_got(discrete = TRUE, 'Antidepressant Class', labels = c('MAOs', 'Other', 'SSRIs', 'TCAs'), option = 'Margaery')
+
+antidep_overview
+
+ggsave(filename = '/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/selfrep_v2_distribution.png', plot = antidep_overview, width = 8, height = 6, device='png', dpi=300)
+
+```
+
+
+```{r merge_with_v5}
+
+names(meds_v5)
+meds_v5_mrg <- meds_v5 %>% select(ID, antidep)
+
+# column we are taking from v2 is antidep_derived 
+
+meds_v2_mrg <- meds_v2_antidep %>% select(ID, antidep=antidep_derived)
+
+meds_v2_v5_antidep <- rbind(meds_v2_mrg, meds_v5_mrg)
+
+table(meds_v2_v5_antidep$antidep, useNA = 'always') # n controls  = 19136, n cases = 1832, n NA = 2631 (all missing values from v5)
+
+# save file 
+
+write.table(meds_v2_v5_antidep,'/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_allGS.tsv', sep = '\t', row.names = F, quote = F)
+```
+
+
+```{r merge_with_methylation}
+
+oii_file <- read.table('/Users/ellad/UniversityEdinburgh/PhD/Data/GenScot/Methylation_antidep/methylation_data/GS20K_GRMcorrected.oii')
+colnames(oii_file)[c(1:2)]<- c('FID', 'IID')
+
+antidep_rep <- meds_v2_v5_antidep
+antidep_rep <- merge(antidep_rep, oii_file %>% select(FID, IID), by.x = 'ID', by.y= 'IID')
+
+
+# merge with the new BMI release file (remove those who have dropped out)
+
+gs_bmi_file <- read_csv('/Users/ellad/UniversityEdinburgh/PhD/Data/GenScot/2023_release/bmi_general_phenos/body.gwasp.202302.csv') %>% as.data.frame()
+antidep_rep <- antidep_rep %>% filter(ID %in% gs_bmi_file$id) # lose 3 controls 
+antidep_rep <- antidep_rep %>% select(FID, ID, antidep) %>% rename(., 'IID'=ID)
+
+```
+
+```{r subset_to_MDD}
+
+scid_pheno <- read.table('/Users/ellad/UniversityEdinburgh/PhD/Data/GenScot/genscot_depression_mergedFID.tsv', sep = '\t', header = T)
+
+MDD_cases <- scid_pheno %>% filter(scid == 1)
+antidep_rep_MDD <- antidep_rep %>% filter(IID %in% MDD_cases$IID)
+
+```
+
+### Saving files 
+
+Writing out the files to datastore: 
+
+```{r saving_file}
+
+# write this out to datastore 
+
+# the self report phenotype on all GS 
+
+# read in the GRM id file for aligning the FIDs 
+
+GRM_ids <- read.table('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/QCdGS20K.grm.id', header = F)
+
+colnames(GRM_ids) <- c('FID_GRM', 'IID')
+
+antidep_rep_GRM <- merge(antidep_rep, GRM_ids, by = 'IID')
+antidep_rep_GRM <- antidep_rep_GRM %>% select(FID_GRM, IID, antidep) %>% rename(FID = FID_GRM)
+
+# check the difference for self report phenotype 2 (all FIDs align for these ones)
+
+antidep_rep_MDD_GRM <- merge(antidep_rep_MDD, GRM_ids, by = 'IID')
+
+# no loss in people in antidep_rep_MDD_GRM (selfrep_pheno4)
+
+#write_csv(meds_v2_v5_antidep, '/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/self_report_derived_antidep_27_04.csv')
+
+# the self report phenotype on GS with methylation data and consistent with the latest data release 
+
+write.csv(antidep_rep_GRM, '/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3.csv', quote = F, row.names = F)
+
+write.table(antidep_rep_GRM, '/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3_nocolnames.pheno', quote = F, row.names = F)
+
+# subsetted to MDD
+
+#write_csv(antidep_rep_MDD, '/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/selfrep_MDD_pheno4_methyl_03_05.csv')
+
+
+
+```
+
+Subsetting to those in the GRM (as this happens when residualising the phenotypes in GCTA anyway, and to get accurate sample sizes)
+
+```{r}
+GRM_ids <- read.table('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/QCdGS20K.grm.id', header = F)
+
+colnames(GRM_ids) <- c('FID', 'IID')
+
+table(antidep_rep_MDD$antidep, useNA = 'always')
+table(antidep_rep$antidep, useNA = 'always')
+
+# checking no duplicate IDs 
+
+table(duplicated(antidep_rep$IID), useNA = 'always')
+table(duplicated(antidep_rep_MDD$IID), useNA = 'always')
+
+# select those which are present in the GRM 
+
+antidep_rep_GRM <- antidep_rep %>% filter(IID %in% GRM_ids$IID)
+
+# read in the residualised phenotypes 
+
+selfrep_resid_pheno3 <- read.table('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/resid_phenos/residualised_selfrep_pheno3_nocolnames.pheno', header = F)
+
+colnames(selfrep_resid_pheno3) <- c('FID', 'IID', 'resid_pheno')
+
+# the number of those in selfrep_pheno3 file
+
+antidep_rep %>% filter(!is.na(antidep)) %>% nrow()
+
+# the number of those in the residualised pheno file (post GRM-residualisation in the GRM )
+
+nrow(selfrep_resid_pheno3)
+
+table(antidep_rep %>% filter(IID %in% selfrep_resid_pheno3$IID) %>% pull(antidep), useNA = 'always')
+
+#identify those lost with the GCTA Step
+
+selfrep_lostGCTA <- antidep_rep %>% filter(!is.na(antidep)) %>% filter(!IID %in% selfrep_resid_pheno3$IID) 
+
+GRM_ids %>% filter(IID %in% selfrep_lostGCTA$IID)
+
+# essentially identified that GCTA removes people if there are not matching IIDs AND FIDs. In the IID and FID we have from the sample_info file (?), the FIDs did not match up for four individuals and therefore they were excluded. Adding them back in by aligning the FIDs between the phenotype file and the GRM.id file 
+
+
+```
+
+## Self-report only (no prescriptons)
+
+Limit the self-report phenotype to those with appointments before prescription linkage, to make the prescription-derived phenotype and the self-report phenotype two independent groups. Currently using all the self-report phenotype uses people also in the prescription derived phenotype (with prescriptions over appointmentm, so appointment post 04-2009). Therefore the counting these people twice in the analyses might be influencing the concordance of results we see between the two measures. 
+
+```{r}
+# Read in the appointment data 
+appt <- read.csv('/Users/ellad/UniversityEdinburgh/PhD/Data/GenScot/Methylation_antidep/methylation_data/appt.csv')
+appt$appt <- dmy(appt$appt)
+
+appt_before_link <- appt %>% filter(appt < as.Date('2009-04-30'))
+selfrep_ph3_indep <- antidep_rep_GRM %>% filter(IID %in% appt_before_link$id) 
+
+# read in the prescription derived phenotype (should be no overlap theoretically)
+
+antidep_pheno1 <- read_csv('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/prescription/10_percent/all_antidep/antidep_pheno1_clean_appt.csv') %>% as.data.frame()
+
+table(antidep_pheno1$antidep_pheno1, useNA = 'always')
+nrow(antidep_pheno1)
+
+table(selfrep_ph3_indep$antidep, useNA = 'always')
+
+# check there is no overlap in samples 
+
+table(selfrep_ph3_indep$IID %in% antidep_pheno1$IID, useNA = 'always')
+
+# save the file of selfreport phenotype (independent sample to the prescription derived phenotype)
+
+write.csv(selfrep_ph3_indep, '/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3_indep.csv', quote = F, row.names = F)
+
+write.table(selfrep_ph3_indep, '/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3_indep_nocolnames.pheno', quote = F, row.names = F)
+
+
+```
+
+## Supplementary table
+
+```{r}
+# load the excel file for adding sheets of other tables 
+supp_wb <- loadWorkbook('/Users/ellad/UniversityEdinburgh/PhD/Year 2/Methylation_antidep_writing/supp_tables.xlsx')
+
+# second 
+# info on the antidepressant prescriptions post parsing and filtering steps 
+
+addWorksheet(supp_wb, "Self_rep_medications_v2")  
+writeData(supp_wb, "Self_rep_medications_v2", meds_v2_names)
+
+# save the sheets 
+saveWorkbook(supp_wb, '/Users/ellad/UniversityEdinburgh/PhD/Year 2/Methylation_antidep_writing/supp_tables.xlsx', overwrite=T)
+
+```
+

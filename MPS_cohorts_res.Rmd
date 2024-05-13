@@ -1,0 +1,665 @@
+---
+title: "MRSpred_externalcohorts"
+author: "Ella Davyson"
+date: "2023-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+library(data.table)
+library(meta)
+library(ggplot2)
+library(openxlsx)
+```
+
+# AD exposure prediction by a MPS
+
+## AD MPS prediction in Generation Scotland 
+
+```{r}
+
+# model coefficients 
+GS_coeff <- read_table('edavyson/Antidep_methylation/MRS/GS_testing/test_MRSassoc/16_01/GS_MRS_AD_coefficients.txt') %>% as.data.frame()
+GS_coeff <- GS_coeff[, c(1:5)]
+colnames(GS_coeff) <- c('Coefficient','Estimate', 'SE', 'Z', 'P')
+
+# model metrics 
+GS_modmet <- read_table('edavyson/Antidep_methylation/MRS/GS_testing/test_MRSassoc/16_01/GS_MRS_AD_modmetrics.txt') %>% as.data.frame()
+GS_modmet$N <- 1508 + 15028
+
+# calculate 95% CIs 
+
+GS_coeff <- GS_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort = 'GS')
+
+# cohort demographics
+
+```
+
+## External Cohorts 
+Running AD-MPS (weights trained in Generation Scotland) prediction models of AD exposure in external cohorts.
+FinnTwin, SHIP-Trend, Netherlands Twin Register, 
+
+### FinnTwin 
+#### Info 
+
+Data from 3 FinnTwin Cohorts: 
+
+FinnTwin12: Aged 21-25, 450K and EPIC
+FinnTwin16: Aged 23-30, 450k and EPIC
+FinnTwin_older: Aged 56-70, 450K
+
+Total N (using both 450K and EPIC)
+84 Current AD Takers ('cases')
+1678 Non-current AD takers ('controls')
+450K: 1315 controls and 65 cases
+EPIC: 363 controls and 19 cases
+
+Flagged bias in the AD case sample towards female sex (Fisher's test p < 0.01).
+MPS for 450K and EPIC calculated separately. 450K score had 183 probes (out of 212) and EPIC had 211. 
+
+Ran many models, but the glm() models did not converge when using family and slide as a random effect. Perhaps could include just family as a random effect (if that better adjusts for slide). 
+GEE model converged: (function creates a quasi-log likelihood)
+
+assoc_mod <- glmgee(as.factor(antidep)~ scale(AD_MRS) + scale(age) + scale(Mono) + 
+                 scale(lymphocytes) + scale(cg05575921) + as.factor(sex_coded),
+                 data = MRS_covs_pheno, 
+                 id = familyID, 
+                 family = binomial,
+                 corstr = "Exchangeable")
+
+```{r}
+
+ftc_coeff <- read.table('antidep_methylation/Other_cohort_MRS_results/FinnTwin/v3/FTC_MRS_AD_coefficients.txt', header = T)
+
+
+# no labels for the coefficients (added to github)
+# manually annotate from the log file
+colnames(ftc_coeff) <- c('Estimate', 'SE', 'Z', 'P')
+ftc_coeff$Coefficient <- c('(Intercept)', 'scale(AD_MRS)','scale(age)','scale(Mono)' ,'scale(lymphocytes)','scale(cg05575921)','as.factor(sex_coded)1')
+ftc_coeff <- ftc_coeff %>% dplyr::select(Coefficient, everything())
+
+# calculate 95% CIs 
+
+ftc_coeff <- ftc_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort = 'FTC')
+
+  
+```
+
+Read in the Model metric table : 
+
+
+```{r}
+ftc_modmet <- read.table('antidep_methylation/Other_cohort_MRS_results/FinnTwin/v3/FTC_MRS_AD_modmetrics.txt', header = T)
+ftc_modmet$N <- 84 + 1678
+```
+
+### Ship TREND 
+
+#### Info 
+
+Probands (?) were asked to bring their current medication to the examination. 
+21 bought antidepressant medication ('cases')
+474 did not bring antidepressant medication ('controls')
+
+The MPS calculated had all 212 probes included in the weights file (check but looks like it from the log file). 
+Model 1 (Monocytes and lymphocyte % measured):
+as.factor(antidep) ~ scale(AD_MRS) + scale(AGE_SHIP_T0) + scale(mo_pct_e) + scale(LY_PCT_E) + scale(AHRR) + as.factor(SEX_SHIP_T0) + scale(PC1_cp) + scale(PC2_cp) + scale(PC3_cp) + (1 | Batch) + scale(wbc)
+
+antidep : intake of antidepressants [0=no, 1=yes]
+AGE_SHIP_T0 : age at examination date [years]
+mo_pct_e : monocytes [%]
+LY_PCT_E : lymphocytes [%]
+AHRR : methylation at cg05575921 [M-values]
+SEX_SHIP_T0 : sex [female, male]
+PC1_cp – PC6_cp : principal components of the control probe intensities obtained by the CPACOR workflow to account for technical factors
+Batch : methylation batch [Batch1 n=248, Batch2 n=247]
+wbc : white blood cells / leukocytes [Gpt/l]
+est_Bcell , est_CD4T , est_CD8T , est_Gran , est_Mono, est_NK : cell subtypes estimated using the Houseman method
+ 
+** Unrelated sample ?**
+
+```{r}
+SHIP_coeff <- read_table('antidep_methylation/Other_cohort_MRS_results/SHIP_Trend/SHIP_output_2023_11_27_version1/SHIP_MRS_AD_coefficients.txt') %>% as.data.frame()
+SHIP_coeff <- SHIP_coeff[, c(1:4)]
+colnames(SHIP_coeff) <- c('Estimate', 'SE', 'Z', 'P')
+
+SHIP_coeff$Coefficient <- c('(Intercept)','scale(AD_MRS)','scale(AGE_SHIP_T0)','scale(mo_pct_e)','scale(LY_PCT_E)','scale(AHRR)','as.factor(SEX_SHIP_T0)2','scale(PC1_cp)','scale(PC2_cp)','scale(PC3_cp)','scale(wbc)')
+SHIP_coeff <- SHIP_coeff %>% dplyr::select(Coefficient, everything())
+
+# calculate 95% CIs 
+
+SHIP_coeff <- SHIP_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'SHIP-Trend')
+
+```
+
+Read in the log likelihood table : 
+**Replace with model metric table**
+```{r}
+SHIP_logL <- read_table('antidep_methylation/Other_cohort_MRS_results/SHIP_Trend/SHIP_output_2023_11_27_version1/SHIP_MRS_AD_logL.txt') %>% as.data.frame()
+SHIP_logL$N <- 21 + 474
+SHIP_logL$Cohort <- 'SHIP-Trend'
+```
+### FOR2107
+
+#### Info 
+
+Participants were asked during an interview about current medication (which drug, since when, daily dosage in mg). Drugs were then assigned to groups based on the attached table.
+
+115 were on antidepressant medication alone and 50 on antidepressant and neuroleptic medication (n ~ 165)
+335 + 170 (n ~ 505) did not bring antidepressant medication
+
+N.B All those who bought antidepressants had a MDD diagnosis. Those who did not mainly did not have MDD diagnosis (n ~ 336) but some did (n ~ 170). 
+
+Official numbers in log file : 
+Cases : 165
+Controls: 493
+
+The MPS calculated had all 212 probes included in the weights file, and no CpGs had any missingness for the sample. 
+
+Model: 
+glm(formula = as.factor(antidep) ~ scale(AD_MRS) + scale(age) + 
+    scale(Mono) + scale(lymphocytes) + scale(cg05575921) + as.factor(sex_coded) + 
+    scale(C1) + scale(C2) + scale(C3) + scale(C4) + scale(C5) + 
+    scale(C6) + scale(C7) + scale(C8) + scale(C9) + scale(C10), 
+    family = "binomial", data = MRS_covs_pheno)
+  
+**No batch effect so taken out the random effect and glmer is not glm()**
+**Unrelated sample**
+
+```{r}
+FOR2107_coeff <- read_table('antidep_methylation/Other_cohort_MRS_results/FOR2107/AD_MRS_FOR2107_2024-01-12/FOR2107_MRS_AD_coefficients.txt') %>% as.data.frame()
+FOR2107_coeff <- FOR2107_coeff[, c(1:5)]
+colnames(FOR2107_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+
+# calculate 95% CIs 
+
+FOR2107_coeff <- FOR2107_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'FOR2107')
+
+```
+
+Read in the model metrics 
+
+```{r}
+FOR2107_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/FOR2107/AD_MRS_FOR2107_2024-01-12/FOR2107_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+FOR2107_modmet$N <- 165+493
+
+```
+
+### LBC1936 - WAVE 1
+
+53 reported use of antidepressant, and 1038 do not report use of antidepressant. 
+
+On merging with methylation data : cases : 46, controls: 843
+
+The MPS calculated was using 206 probes (6 not available), and had no missingness. 
+
+Model: 
+glmer(as.factor(antidep) ~ scale(AD_MRS) + scale(age) + scale(neut) +  
+    scale(lymph) + scale(cg05575921) + scale(mono) + scale(eosin) +  
+    scale(baso) + as.factor(sex_coded) + scale(C1) + scale(C2) + scale(C3) + scale(C4), (1 | array), data = MRS_covs_pheno, family = "binomial")
+
+**N.B This model uses cell counts rather than cell proportions**
+
+#### Info 
+
+```{r}
+LBC1936_coeff <- read_table('antidep_methylation/Other_cohort_MRS_results/LBC1936_MRS_res/LBC1936_assoc_PCs/LBC1936_MRS_AD_coefficients.txt') %>% as.data.frame()
+LBC1936_coeff <- LBC1936_coeff[, c(1:5)]
+colnames(LBC1936_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+LBC1936_coeff <- LBC1936_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'LBC1936')
+
+```
+
+```{r}
+LBC1936_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/LBC1936_MRS_res/LBC1936_assoc_PCs/LBC1936_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+LBC1936_modmet$N <- 46 + 843
+
+```
+
+### STRADL
+
+#### Info
+
+Of the controls in GS (i.e those who do not self report AD use at baseline), who were also in the STRADL study (n = 901).
+At the STRADL time point there were 
+833 Controls
+68 Cases
+
+AD MPS made up of all 212 CpGs and there was no missingness in the methylation data. 
+
+When merged with methylation data: 
+
+616 Controls
+42 Cases 
+
+Model: 
+
+assoc_mod <- glmer(as.factor(antidep)~ scale(AD_MRS) + scale(age) + scale(Mono) + 
+                     scale(lymphocytes) + scale(cg05575921)+
+                      as.factor(sex_coded) +
+                     (1|batch) + (1|famid), data = MRS_covs_pheno, family = 'binomial')
+
+```{r}
+STRADL_coeff <- read_table('antidep_methylation/Other_cohort_MRS_results/STRADL_MRSres/STRADL_22_02_CORRECTID/STRADL_MRSassoc/STRADL_MRS_AD_coefficients.txt') %>%
+  as.data.frame()
+STRADL_coeff <- STRADL_coeff[, c(1:5)]
+colnames(STRADL_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+STRADL_coeff <- STRADL_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'STRADL')
+
+```
+
+```{r}
+STRADL_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/STRADL_MRSres/STRADL_22_02_CORRECTID/STRADL_MRSassoc/STRADL_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+STRADL_modmet$N <- 42 + 616
+
+```
+
+### NTR
+
+#### Info
+
+Total N : 3087
+Controls: 2, 998
+Cases: 89
+
+
+Model: NTR_MRS_antidep_assoc.R 
+
+assoc_mod_glmr2 <- glmer(as.factor(antidep) ~ scale(AD_MRS) + scale(age) + as.factor(sex) + scale(Mono_Perc) + scale(Eos_Perc) + scale(Neut_Perc) + as.numeric(Array_rownum) + as.factor(Sample_Plate_collapsed_fix) + scale(cg05575921) + (1|familynumber), data=MRS_covs_pheno_ahhr, family=binomial(link = "logit"), nAGQ = 20,
+          control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+
+```{r}
+NTR_coeff <-  read_table('antidep_methylation/Other_cohort_MRS_results/NTR/results_scaled_feb_2024/transfer_2599009_files_d0a399cf/NTR_MRS_AD_coefficients.txt') %>%
+  as.data.frame()
+NTR_coeff <- NTR_coeff[, c(1:5)]
+colnames(NTR_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+NTR_coeff <- NTR_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'NTR')
+```
+
+```{r}
+NTR_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/NTR/results_scaled_feb_2024/transfer_2599009_files_d0a399cf/NTR_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+NTR_modmet$N <- 89 + 2998
+
+```
+
+### MARS
+
+#### Info
+
+Total N: 312
+Cases: 135
+Controls: 177
+
+Model: 
+
+glm(formula = as.factor(antidep) ~ scale(AD_MRS) + scale(age) + 
+    scale(Mono) + scale(lymphocytes) + scale(cg05575921) + as.factor(sex_coded) + 
+    scale(C1) + scale(C2) + scale(C3) + scale(C4) + scale(C5) + 
+    scale(C6) + scale(C7) + scale(C8) + scale(C9) + scale(C10), 
+    family = "binomial", data = MRS_covs_pheno)
+
+```{r}
+MARS_coeff <-  read_table('antidep_methylation/Other_cohort_MRS_results/MARS/MARS_GSK_AD_MRS_analysis_results/MARS_GSK_AD_MRS_association_analysis_results/MARS_GSK_MRS_AD_coefficients.txt') %>%
+  as.data.frame()
+MARS_coeff <- MARS_coeff[, c(1:5)]
+colnames(MARS_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+MARS_coeff <- MARS_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'MARS-UniDep')
+```
+
+```{r}
+MARS_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/MARS/MARS_GSK_AD_MRS_analysis_results/MARS_GSK_AD_MRS_association_analysis_results/MARS_GSK_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+MARS_modmet$N <- 135 + 177
+MARS_modmet$Cohort <- 'MARS-UniDep'
+```
+
+
+
+### ALSPAC - Age 24
+
+#### Info
+
+This analysis phenotype was using age 24 phenotype of being exposed to antidepressants (at the time of the blood draw), as well as those who report taking antidepressants for more than 4 years at the age of 28. 
+
+Controls : 758
+Cases: 43
+Model: 
+
+glm(formula = as.factor(antidep) ~ scale(age) + scale(Mono) + 
+    scale(lymphocytes) + scale(cg05575921) + as.factor(sex_coded), 
+    family = "binomial", data = MRS_covs_pheno)
+    
+
+```{r}
+ALSPAC_coeff <-  read_table('antidep_methylation/Other_cohort_MRS_results/ALSPAC/Aged24_YPH4yrs/Mval_res/20240301-alspac-ad-mrs-results/ALSPAC_MRS_AD_coefficients.txt') %>%
+  as.data.frame()
+ALSPAC_coeff <- ALSPAC_coeff[, c(1:5)]
+colnames(ALSPAC_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+ALSPAC_coeff <- ALSPAC_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'ALSPAC')
+
+```
+
+```{r}
+ALSPAC_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/ALSPAC/Aged24_YPH4yrs/Mval_res/20240301-alspac-ad-mrs-results/ALSPAC_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+ALSPAC_modmet$N <- 43 + 758
+
+```
+
+### E-risk 
+
+Cases: 36 
+Controls: 1622 
+
+assoc_mod<- glmer(as.factor(antidep) ~ scale(AD_MRS) + 
+                           as.factor(sex_coded) + scale(Mono) + scale(lymphocytes)+ scale(as.numeric(Chip))+ scale(cg05575921)+ (1|FID), data=MRS_covs_pheno, family=binomial(link = "logit"), nAGQ = 20,
+                        control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+                        
+```{r}
+ERISK_coeff <-  read_table('antidep_methylation/Other_cohort_MRS_results/ERISK/ERISK_MRSassoc/ERISK_MRS_AD_coefficients.txt') %>%
+  as.data.frame()
+ERISK_coeff <- ERISK_coeff[, c(1:5)]
+colnames(ERISK_coeff) <- c('Coefficient', 'Estimate', 'SE', 'Z', 'P')
+
+ERISK_coeff <- ERISK_coeff %>% 
+  mutate(lowCI = Estimate - 1.96*(SE), highCI =  Estimate + 1.96*(SE)) %>%
+  mutate(OR = exp(Estimate), highCIOR = exp(highCI), lowCIOR = exp(lowCI)) %>% 
+  mutate(cohort= 'ERISK')
+
+```
+
+```{r}
+ERISK_modmet <- read_table('antidep_methylation/Other_cohort_MRS_results/ERISK/ERISK_MRSassoc/ERISK_MRS_AD_modmetrics.txt') %>% as.data.frame()
+
+ERISK_modmet$N <- 36 + 1622
+
+```
+
+### Plots 
+
+#### Numbers 
+
+```{r}
+# Manually taken from log files 
+# Automate this when all results in
+
+cohort_ns <- data.frame(Cohort = c('GS', 
+                                   'FTC',
+                                   'SHIP-Trend', 
+                                   'FOR2107',
+                                   'LBC1936', 
+                                   'STRADL', 
+                                   'NTR', 
+                                   'MARS-UniDep',
+                                   'ALSPAC',
+                                   'ERISK'), 
+N = c(1508 + 15028,
+84 + 1594,
+21 + 474,
+165+493, 
+46+843, 
+42+616, 
+89+2998,
+135 + 177,
+43 + 758,
+36+1622), 
+N_cases = c(1508,84,21,165, 46, 42, 89, 135, 43, 36), N_controls = c(15028,1594,474,493, 843, 616, 2998, 177, 758, 1622))
+
+cohort_ns_long <- tidyr::gather(cohort_ns, key = "Count", value = "Value", -Cohort)
+
+cohort_Ns_MRS <- ggplot(cohort_ns_long %>% dplyr::filter(Count!='N' & Cohort !='GS'), aes(x = Cohort, y = Value, fill = Count)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = Value), position = position_dodge(width = 0.7), hjust = -0.5) +
+  labs(x = "Cohort",
+       y = "Count") +
+  gameofthrones::scale_fill_got_d(option ="Margaery") +theme_bw() + theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"), legend.position = "none") + ylim(0, 3600) + coord_flip()
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/MPS_N_19_02.png', plot = cohort_Ns_MRS,width = 8, height = 6, device='png', dpi=300)
+```
+
+
+#### Model Metrics 
+
+```{r}
+res <- rbind(ftc_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), SHIP_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), FOR2107_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), LBC1936_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), STRADL_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), NTR_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), MARS_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), ALSPAC_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'), ERISK_coeff %>% dplyr::filter(Coefficient == 'scale(AD_MRS)'))
+
+res <- res %>% dplyr::filter(cohort != 'GS' & cohort != 'LBC1921') %>%
+  arrange(desc(Estimate))
+or_res_plt <- ggplot(res %>% 
+                       mutate(cohort =factor(cohort, levels = unique(cohort))), aes(x = log(OR), y = cohort, color = as.factor(P<0.05))) + geom_point(shape = 18, size = 5) + 
+  geom_errorbarh(aes(xmin= log(lowCIOR), xmax = log(highCIOR)), height = 0.25)+
+  geom_vline(xintercept = 0, color = 'red', linetype = 'dashed', cex = 1, alpha = 0.5) + 
+ xlab('Log(Odds Ratio (95% CI))') + 
+  ylab("Cohort") + theme_bw() +  theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"), legend.position = 'top') +
+  scale_color_manual('P < 0.05', values = c( 'black', 'sienna1' ))
+
+cohort_ns_long <- merge(cohort_ns_long, res %>% dplyr::select(cohort, Estimate), by.x = 'Cohort', by.y = 'cohort') %>% arrange(desc(Estimate))
+
+cohort_Ns_MRS <- ggplot(cohort_ns_long %>% dplyr::filter(Count!='N' & Cohort !='GS') %>% mutate(Cohort =factor(Cohort, levels = unique(Cohort))), aes(x = Cohort, y = Value, fill = Count)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = Value), position = position_dodge(width = 0.7), hjust = -0.5) +
+  labs(x = "Cohort",
+       y = "Count") +
+  gameofthrones::scale_fill_got_d(option ="Margaery") +theme_bw() + theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"), legend.position = "none") + ylim(0, 3600) + coord_flip()
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/MPS_N_19_02.png', plot = cohort_Ns_MRS,width = 8, height = 6, device='png', dpi=300)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/OR_cohort_res_meta.png', or_res_plt,width = 8, height = 6, device='png', dpi=300)
+```
+
+McFadden's Rsquared
+
+```{r}
+rsquare <- rbind(SHIP_logL, ftc_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), FOR2107_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), LBC1936_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), STRADL_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), NTR_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), MARS_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), ALSPAC_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N), ERISK_modmet %>% dplyr::select(Cohort, loglik_MRS, loglik_null, mcfad_R2, N))
+
+rsquare <- rsquare %>%
+  mutate(lik_null = exp(loglik_null), lik_MRS = exp(loglik_MRS)) %>%
+  mutate(cox_snell = 1 - (lik_null/lik_MRS)^(2/N)) %>%
+  mutate(nagelkerke = cox_snell/(1-(lik_null^(2/N))))
+
+rsquare <- merge(rsquare, res %>% dplyr::select(cohort, Estimate), by.x = 'Cohort', by.y = 'cohort') %>% arrange(desc(Estimate))
+
+ mcfad_plt <- ggplot(rsquare %>% dplyr::filter(Cohort != 'GS' & Cohort != 'LBC1921') %>% 
+                       mutate(Cohort =factor(Cohort, levels = unique(Cohort))),
+                     aes(x = mcfad_R2, y = Cohort)) + geom_point(shape = 18, size = 5) + xlab( 'McFaddens Pseudo R square') + ylab('Cohort') + theme_bw() + theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"), legend.position = 'top') + xlim(0, 0.2)
+        
+nagel_plt <- ggplot(rsquare %>% dplyr::filter(Cohort != 'GS') %>% 
+                      mutate(Cohort =factor(Cohort, levels = unique(Cohort))),
+                    aes(x = nagelkerke, y = Cohort)) + geom_point(shape = 18, size = 5) + xlab( 'Nagelkerkes Pseudo R square')+ylab("")+ theme_bw() + theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"), legend.position = 'top') + xlim(0, 0.05)
+
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/MPS_Nagel_19_02.png', nagel_plt,width = 8, height = 6, device='png', dpi=300)
+
+rsq_res_plt <- ggarrange(mcfad_plt, nagel_plt, ncol = 2, nrow = 1, labels = c('McFaddens', 'Nagelkerke'))
+        
+```
+
+```{r}
+ggarrange(or_res_plt, nagel_plt)
+ggarrange(cohort_Ns_MRS, nagel_plt, nrow = 1, ncol = 2)
+ggsave(filename = 'antidep_methylation/Writing/Supplementary Info/supp_plots/MPS_N_Nagel_01_03.png', plot = ggarrange(cohort_Ns_MRS , nagel_plt, nrow = 1, ncol = 2),width = 8, height = 6, device='png', dpi=300)
+```
+
+AUC values 
+
+```{r}
+modmets <- rbind(FOR2107_modmet,LBC1936_modmet, STRADL_modmet, ftc_modmet, NTR_modmet, MARS_modmet, ALSPAC_modmet, ERISK_modmet)
+AUC_plt <- ggplot(modmets, aes(x = AUC, y = Cohort)) + geom_point(shape = 18, size = 5) + xlab( 'AUC') + ylab('Cohort') + theme_bw() + theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"), legend.position = 'top')
+
+```
+
+#### ROC curves 
+
+https://www.evidentlyai.com/classification-metrics/explain-roc-curve
+
+
+```{r}
+
+GS_ROC <- readRDS('edavyson/Antidep_methylation/MRS/GS_testing/test_MRSassoc/16_01/GS_roc_curve.rds')
+FTC_ROC <- readRDS('antidep_methylation/Other_cohort_MRS_results/FinnTwin/v3/FTC_roc_curve.rds')
+FOR2107_ROC <- readRDS('antidep_methylation/Other_cohort_MRS_results/FOR2107/AD_MRS_FOR2107_2024-01-12/FOR2107_roc_curve.rds')
+
+LBC1936_ROC <- readRDS('antidep_methylation/Other_cohort_MRS_results/LBC1936_MRS_res/LBC1936_assoc_noPCs_cellcounts/LBC1936_roc_curve.rds')
+STRADL_ROC <- readRDS('antidep_methylation/Other_cohort_MRS_results/STRADL_MRSres/STRADL_MRSassoc/STRADL_roc_curve.rds')
+
+NTR_ROC <- readRDS('antidep_methylation/Other_cohort_MRS_results/NTR/RE_ Paper manuscript review/NTR_roc_curve.rds')
+
+
+plot(GS_ROC, col = "black", main = "ROC Curve Comparison", lty = 1, legacy.axes = T)
+plot(FOR2107_ROC, col = "red", main = "AD MPS ~ AD exposure ROC Curves" , lty = 1, legacy.axes = T)
+
+
+plot(LBC1936_ROC, col = 'green', add = TRUE, lty = 2)
+plot(STRADL_ROC, col = "blue", add = TRUE, lty = 2)
+plot(FTC_ROC, col = "orange", add = TRUE, lty = 2)
+plot(NTR_ROC, col = 'brown', add = TRUE, lty = 2)
+# Add legend
+legend("bottomright", legend = c("FOR2107", "LBC1936", "STRADL", "FinnTwin", "NTR"), col = c( "red", "green", "blue", "orange", "brown"), lty = c(1,2,2,2,2,1))
+
+
+
+```
+
+#### Precision recall curve 
+
+
+#### Confusion matrix 
+
+Assuming discrimination threshold is set to 0.5 ? 
+
+
+#### Meta-analysis
+
+Performing a meta-analysis using the meta R package. Running a random effects model, using the dersimonian-laird estimator to estimate the between study heterogeneity in true effect sizes. 
+
+```{r}
+
+res <- res %>% 
+  mutate(logOR = log(OR))
+
+test_meta <- meta::metagen(TE = logOR, seTE = SE, studlab = cohort, sm = "SMD", data = res %>% dplyr::filter(cohort != 'GS' & cohort != 'LBC1921'), random = TRUE, method.tau="DL", title = "Antidepressant exposure ~ MRS")
+
+print(summary(test_meta))
+test_meta_df <- as.data.frame(test_meta)
+
+meta::forest(test_meta, sortvar = TE,prediction = FALSE,layout = 'JAMA', common = FALSE)
+
+
+my_plot <- grid::grid.grab()
+
+
+png(file='antidep_methylation/Writing/Supplementary Info/supp_plots/forest_jama_01_03.png', width = 8, height = 8, res = 300, units = 'in')
+meta::forest(test_meta, sortvar = TE,prediction = FALSE,layout = 'JAMA', common = FALSE)
+dev.off()
+
+```
+
+
+## Supplementary Tables
+
+```{r}
+# load the excel file for adding sheets of other tables 
+supp_wb <- loadWorkbook('antidep_methylation/Writing/Supplementary Info/supp_tables_27_02.xlsx')
+
+sheet_names <- getSheetNames('antidep_methylation/Writing/Supplementary Info/supp_tables_27_02.xlsx')
+rsquare$Cohort[rsquare$Cohort == "MARS_GSK"] <- "MARS"
+res_rsquare <- merge(res, rsquare %>% select(-Estimate), by.x = 'cohort', by.y = 'Cohort')
+res_rsquare <- res_rsquare %>% dplyr::filter(cohort != 'GS')
+# if statements to account for overwriting (if I want to add more columns etc I don't want it to be a new sheet, just to overwrite the old one)
+
+# third 
+###########################################################
+
+# Cohort results OR 
+
+###########################################################
+
+# Significant probes found in the prescrption-derived MWAS (4 probes)
+if (!("MPS_Meta_analysis_OR" %in% sheet_names)) {
+  addWorksheet(supp_wb, "MPS_Meta_analysis_OR")
+}
+writeData(supp_wb,"MPS_Meta_analysis_OR", res_rsquare %>% 
+            dplyr::select(cohort, everything()) %>% 
+            dplyr::select(-c(Coefficient, logOR)))
+
+###########################################################
+
+# Cohort results meta-analysis results 
+
+###########################################################
+
+
+if (!("MPS_Meta_analysis_pooledres" %in% sheet_names)) {
+  addWorksheet(supp_wb, "MPS_Meta_analysis_pooledres")
+}
+writeData(supp_wb,"MPS_Meta_analysis_pooledres", test_meta_df[match(res_rsquare$cohort,test_meta_df$studlab),])
+
+# save the sheets 
+saveWorkbook(supp_wb, 'antidep_methylation/Writing/Supplementary Info/supp_tables_27_02.xlsx', overwrite=T)
+
+```
+

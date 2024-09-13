@@ -106,6 +106,17 @@ ttest_res <- data.frame(
     conf_int_low = c(sr_age_ttest$conf.int[[1]], sr_bmi_ttest$conf.int[[1]], sr_packyears_ttest$conf[[1]], pd_age_ttest$conf.int[[1]], pd_bmi_ttest$conf.int[[1]], pd_packyears_ttest$conf[[1]]),
     conf_int_high = c(sr_age_ttest$conf.int[[2]], sr_bmi_ttest$conf.int[[2]], sr_packyears_ttest$conf[[2]], pd_age_ttest$conf.int[[2]], pd_bmi_ttest$conf.int[[2]], pd_packyears_ttest$conf[[2]]),
     cohens_D = c(sr_age_cohen$estimate, sr_bmi_cohen$estimate, sr_packyears_cohen$estimate, pd_age_cohen$estimate, pd_bmi_cohen$estimate, pd_packyears_cohen$estimate)) 
+round_numeric <- function(df) {
+    df[] <- lapply(df, function(col) {
+        if (is.numeric(col)) {
+            signif(col, digits = 3)
+        } else {
+            col
+        }
+    }) 
+    return(df)
+}
+ttest_res <- round_numeric(ttest_res)
 write.table(ttest_res, paste0(outdir, "age_bmi_packyears_ttest.tsv"), sep= "\t", row.names = F, quote = F)
 
 ########## Chi squared tests  #########
@@ -180,5 +191,5 @@ chisquare_res <- data.frame(
     chi_sqaure = c(sr_sex_chisq$statistic, sr_smoke_chisq$statistic, sr_mdd_chisq$statistic, pd_sex_chisq$statistic, pd_smoke_chisq$statistic, pd_mdd_chisq$statistic),
     df = c(sr_sex_chisq$parameter, sr_smoke_chisq$parameter, sr_mdd_chisq$parameter, pd_sex_chisq$parameter, pd_smoke_chisq$parameter, pd_mdd_chisq$parameter),
     pval = c(sr_sex_chisq$p.value, sr_smoke_chisq$p.value, sr_mdd_chisq$p.value, pd_sex_chisq$p.value, pd_smoke_chisq$p.value, pd_mdd_chisq$p.value))
-
-write.table(chisquare_res, paste0(outdir, "sex_smoke_mdd_chisquare_res.tsv", sep = "\t", row.names = F, quote = F))
+chisquare_res <- round_numeric(chisquare_res)
+write.table(chisquare_res, paste0(outdir, "sex_smoke_mdd_chisquare_res.tsv"), sep = "\t", row.names = F, quote = F)

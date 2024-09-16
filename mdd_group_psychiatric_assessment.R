@@ -82,7 +82,7 @@ selfrep_scid <- selfrep_scid %>% select(phenotype, everything())
 
 selfrep_scid$SCID_Diagnosis <- rownames(selfrep_scid)
 selfrep_scid <- selfrep_scid[, c(ncol(selfrep_scid), 1:(ncol(selfrep_scid)-1))] 
-outdir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/"
+outdir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/SCID_SPQ/"
 write.table(selfrep_scid, paste0(outdir, "selfrep_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
 
 pd_mrg <- pd_mrg %>% rename(antidep=antidep_pheno1)

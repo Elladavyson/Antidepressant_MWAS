@@ -194,7 +194,7 @@ sr_spq  <- sr_spq[-3,]
 colnames(sr_spq) <- make.names(colnames(sr_spq), unique = TRUE)
 sr_spq <- sr_spq %>% 
 rownames_to_column(var = "antidep_exposure") %>% 
-mutate(phenotype = "Prescription_derived")
+mutate(phenotype = "Self_report")
 sr_spq <- sr_spq %>% select(phenotype, everything())
 # Combine the two 
 spq_both <- rbind(sr_spq, pd_spq)

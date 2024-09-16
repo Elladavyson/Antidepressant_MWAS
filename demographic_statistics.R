@@ -32,7 +32,7 @@ pd <- pd %>% filter(IID %in% pd_resid$IID)
 ## Self-report ##
 
 # Distributions 
-outdir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/"
+outdir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/demographics/"
 
 sr_demographics <- left_join(sr, demographics, by = "IID")
 hist_save <- function(label, colname) {

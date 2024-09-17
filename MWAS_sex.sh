@@ -11,6 +11,8 @@
 #$ -M s2112198@ed.ac.uk
 #$ -m baes
 
+# Example run
+# qsub MWAS_sex.sh antidep_pheno1_clean_appt/selfrep_pheno3 female/male
 . /etc/profile.d/modules.sh
 module load igmm/apps/osca/0.46
 

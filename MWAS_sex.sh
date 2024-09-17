@@ -2,7 +2,7 @@
 #########################################################
 #$ -N MOA_sex_segregated
 #$ -l h_rt=48:00:00
-#$ -l h_vmem=64G
+#$ -l h_vmem=16G
 #$ -cwd
 #$ -pe sharedmem 8
 #$ -e MOA_sex_segregated

@@ -127,8 +127,24 @@ mutate(MDD_total = Recurrent.MDD + Single.MDD.Episode)
 write.table(pd_scid, paste0(outdir, "pd_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )    
 # Both  
 all_scid_summary <- rbind(selfrep_scid, pd_scid)
-write.table(all_scid_summary, paste0(outdir, "pd_sr_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
+# Reformatting to match paper table 
+all_scid_long <- all_scid_summary %>%
+  pivot_longer(cols = c(Total, Bipolar, No.Major.Disorder, Recurrent.MDD, Single.MDD.Episode, NA., MDD_total),
+               names_to = "Category",
+               values_to = "Value")
+scid_long_percentages <- all_scid_long %>%
+group_by(phenotype, antidep_exposure) %>% 
+mutate(Total_for_group = Value[Category == "Total"],
+Percentage = (Value/Total_for_group)*100) %>%
+ ungroup() %>%
+ mutate(value_perc= paste0(Value, " (", round(Percentage,1), ")")) %>%
+ select(-c(Total_for_group, Value, Percentage))
+all_scid_wide <- scid_long_percentages %>%
+  unite("group", phenotype, antidep_exposure, sep = "_") %>%  # Create a unique identifier for columns
+  pivot_wider(names_from = group, values_from = value_perc) 
 
+write.table(all_scid_summary, paste0(outdir, "pd_sr_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
+write.table(all_scid_wide, paste0(outdir, "pd_sr_scid_wide.tsv"), sep = "\t", row.names = F, quote = F)
 # Scottish Morbidity records 
 # SMRDiag.csv from /exports/igmm/eddie/GenScotDepression/data/genscot/
 # More detailed information about the codes exactly are in /exports/cmvm/eddie/scs/groups/mcintosh-gs-linkage/users/jhaffert/Files\ for\ Transfer

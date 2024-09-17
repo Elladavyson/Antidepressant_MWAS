@@ -3,10 +3,11 @@
 #$ -N MOA_sex_segregated
 #$ -l h_rt=48:00:00
 #$ -l h_vmem=16G
+#$ -l rl9=false
 #$ -cwd
 #$ -pe sharedmem 8
-#$ -e MOA_sex_segregated
-#$ -o MOA_sex_segregated
+#$ -e /exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/MWAS_sex_segregated/MOA_logs
+#$ -o /exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/MWAS_sex_segregated/MOA_logs
 #$ -M s2112198@ed.ac.uk
 #$ -m baes
 

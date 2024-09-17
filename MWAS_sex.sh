@@ -11,7 +11,6 @@
 #$ -m baes
 
 . /etc/profile.d/modules.sh
-module load igmm/apps/R/4.1.0
 module load igmm/apps/osca/0.46
 
 SCRATCH='/exports/eddie/scratch/s2112198'

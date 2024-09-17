@@ -23,7 +23,7 @@ colnames(pd_resid) <- c("FID", "IID", "resid_antidep")
 pd_mrg <- merge(pd, pd_resid %>% select(-FID), by = "IID")
 table(pd_mrg$antidep) # 7090 unexposed and 861 exposed 
 
-########### Assess the prevalence of other psychiatric disorders in this full sample 
+########### SCID Questionnaire in Generation Scotland 
 ### the MDD phenotype 
 fam <- read_table('data/genetics/genotypes/GS20K_PLINK_files/QCd_data/QCdGS20K.fam', col_names=c('FID', 'IID', 'father', 'mother', 'sex', 'pheno'))
 # age/sex at baseline
@@ -58,7 +58,8 @@ mutate(cidi=case_when(CIDI_MDD == 0 ~ 0L,
 # remove intermediate columns
 #select(-SCID_Diagnosis, -CIDI_MDD)
 
-# Merge the antidepressant_exposure phenotypes with the depression phenotypes 
+# Merge the antidepressant_exposure phenotypes with the SCID phenotypes 
+# Self-report 
 selfrep_mrg <- left_join(selfrep_mrg, gs_depression, by = "IID")
 selfrep_mrg <- selfrep_mrg %>% mutate(
     SCID_Diagnosis_text = case_when(
@@ -69,22 +70,21 @@ selfrep_mrg <- selfrep_mrg %>% mutate(
     ),
     antidep_text = ifelse(antidep == 0, "Unexposed", "Exposed")
 )
-table(selfrep_mrg$SCID_Diagnosis, useNA = "always") # 
+table(selfrep_mrg$SCID_Diagnosis, useNA = "always") 
+# Dsitribution of SCID diagnoses in the full sample  
 selfrep_scid <- addmargins(table(selfrep_mrg$antidep_text,selfrep_mrg$SCID_Diagnosis_text, useNA = "always", dnn = c("Antidepressant exposure", "SCID Diagnosis")), FUN = list(Total = sum))%>%
-as.data.frame.matrix() # Dsitribution of SCID diagnoses in the full sample  
+as.data.frame.matrix() 
 selfrep_scid <- selfrep_scid[-3,]
 colnames(selfrep_scid) <- make.names(colnames(selfrep_scid), unique = TRUE)
 selfrep_scid <- selfrep_scid %>% 
 rownames_to_column(var = "antidep_exposure") %>% 
 mutate(phenotype = "Self_report")
 selfrep_scid <- selfrep_scid %>% select(phenotype, everything())
-
-
 selfrep_scid$SCID_Diagnosis <- rownames(selfrep_scid)
 selfrep_scid <- selfrep_scid[, c(ncol(selfrep_scid), 1:(ncol(selfrep_scid)-1))] 
 outdir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/SCID_SPQ/"
 write.table(selfrep_scid, paste0(outdir, "selfrep_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
-
+# Prescription-derived
 pd_mrg <- pd_mrg %>% rename(antidep=antidep_pheno1)
 pd_mrg <- left_join(pd_mrg, gs_depression, by = "IID")
 pd_mrg <- pd_mrg %>% mutate(
@@ -105,21 +105,25 @@ pd_scid <- pd_scid %>%
 rownames_to_column(var = "antidep_exposure") %>% 
 mutate(phenotype = "Prescription_derived")
 pd_scid <- pd_scid %>% select(phenotype, everything())
-
-write.table(pd_scid, paste0(outdir, "pd_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
+write.table(pd_scid, paste0(outdir, "pd_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )    
+# Both  
 all_scid_summary <- rbind(selfrep_scid, pd_scid)
 write.table(all_scid_summary, paste0(outdir, "pd_sr_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
 
-# Look at how many SMR exclude participants there are 
+# Scottish Morbidity records 
+# SMRDiag.csv from /exports/igmm/eddie/GenScotDepression/data/genscot/
+# More detailed information about the codes exactly are in /exports/cmvm/eddie/scs/groups/mcintosh-gs-linkage/users/jhaffert/Files\ for\ Transfer
 smr_diag <- read.csv("SMRDiag.csv", header = T)
 smr_exclude <- left_join(smr_exclude, smr_diag, by= c("IID"="gwas"))
+# Summary of the different SMR labels annotated to each person (conditions and which record type)
 smr_exclude$smr_criteria <- apply(smr_exclude, 1, function(x) {
     paste(names(smr_exclude)[which(x == TRUE)], collapse = ":")
 })
+# Summary of conditions labelled to each person 
 smr_exclude$smr_cond <- apply(smr_exclude %>% select(-starts_with('SMR')), 1, function(x) {
     paste(names(smr_exclude)[which(x == TRUE)], collapse = ":")
 })
-
+# UpSet Plot
 smr_lists <- list(depression = smr_exclude %>% filter(depression==TRUE) %>% .$IID, bipolar = smr_exclude %>% filter(bipolar==TRUE) %>% .$IID,
 schizophrenia_broad = smr_exclude %>% filter(schiz_broad==TRUE) %>% .$IID, szhizophrenia_narrow = smr_exclude
  %>% filter(schiz_narrow==TRUE) %>% .$IID,
@@ -137,7 +141,7 @@ selfrep_mrg_smr <- selfrep_mrg_smr %>%
 mutate(bip_scz= ifelse(bipolar==TRUE|schiz_broad == TRUE | schiz_narrow == TRUE, 1,0))
 
 table(selfrep_mrg_smr$bip_scz, selfrep_mrg_smr$antidep_text, useNA = "always")
-
+# Prescription derived 
 pd_mrg_smr <- left_join(pd_mrg, smr_exclude, by = c("IID"))
 pd_mrg_smr <- pd_mrg_smr %>%
 mutate(bip_scz= ifelse(bipolar==TRUE|schiz_broad == TRUE | schiz_narrow == TRUE, 1,0))
@@ -170,6 +174,7 @@ write.table(SMR_information, paste0(outdir, "SMR_info_antidep_phenotypes_all.tsv
 
 ### SPQ information 
 # Schizotypal personality questionnaire 
+## NOT RELEVANT FOR SCHIZOPHRENIA 
 spq <- read.csv("SPQ.csv", header = T)
 
 # Getting the numbers for both phenotypes

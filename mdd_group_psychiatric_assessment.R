@@ -6,10 +6,11 @@ library(data.table)
 library(UpSetR)
 library(tibble)
 library(ggplot2)
+library(readxl)
 
 ########### Read in antidepressant phenotypes
 ### Copied from /exports/igmm/datastore/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/
-
+### Residualised phenotypes from /05_23_phenos/
 ## Self-report phenotype 
 selfrep <- read.csv("selfrep_pheno3_methyl_03_05.csv", header = T)
 selfrep_resid <- read.table("residualised_selfrep_pheno3_nocolnames.pheno", header = F)
@@ -80,13 +81,14 @@ selfrep_scid <- selfrep_scid %>%
 rownames_to_column(var = "antidep_exposure") %>% 
 mutate(phenotype = "Self_report")
 selfrep_scid <- selfrep_scid %>% select(phenotype, everything())
-selfrep_scid$SCID_Diagnosis <- rownames(selfrep_scid)
 selfrep_scid <- selfrep_scid[, c(ncol(selfrep_scid), 1:(ncol(selfrep_scid)-1))] 
+selfrep_scid <- selfrep_scid %>% 
+mutate(MDD_total = Recurrent.MDD + Single.MDD.Episode)
 outdir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/SCID_SPQ/"
 write.table(selfrep_scid, paste0(outdir, "selfrep_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )      
 # Prescription-derived
 pd_mrg <- pd_mrg %>% rename(antidep=antidep_pheno1)
-pd_mrg <- left_join(pd_mrg, gs_depression, by = "IID")
+pd_mrg <- left_join(pd_mrg, gs_depression, by = c("IID"))
 pd_mrg <- pd_mrg %>% mutate(
     SCID_Diagnosis_text = case_when(
         SCID_Diagnosis == 0 ~ "No Major Disorder",
@@ -96,15 +98,32 @@ pd_mrg <- pd_mrg %>% mutate(
     ),
     antidep_text = ifelse(antidep == 0, "Unexposed", "Exposed")
 )
-table(pd_mrg$SCID_Diagnosis, useNA = "always") # 
+table(pd_mrg$SCID_Diagnosis, useNA = "always") 
+# This has 2 extra participants in the MDD cases and MDD controls to those which were fed into MOA -- check FID status ? 
+# Removing the four individuals not present in the MOA phentoype file 
+antidep_pheno2 <- read.csv("antidep_pheno2_clean_appt.csv", header = T)
+pd_mrg_mdd <- pd_mrg %>% filter(scid == 1 | scid ==2)
+genscot_dep <- read.table("genscot_depression_mergedFID.tsv", sep = "\t", header =T)
+oii_gs20 <- read.table("GS20K_GRMcorrected.oii", header = F)
+colnames(oii_gs20) <- c("FID_oii", "IID_oii", "V3", "V4", "V5")
+ids_missing <- pd_mrg_mdd$IID[pd_mrg_mdd$IID %in% antidep_pheno2$IID==FALSE]
+ids_missing_FID <- merge(oii_gs20 %>% filter(IID_oii%in% ids_missing), genscot_dep %>% filter(IID %in% ids_missing), by.x = "IID_oii", by.y = "IID")
+ids_missing_FID
+# These individuals were not included due to mismatching FID between the MDD file and methylation data
+pd_mrg[pd_mrg$IID %in% ids_missing, "scid"] <- NA
+pd_mrg[pd_mrg$IID %in% ids_missing, "SCID_Diagnosis_text"] <- NA_character_
+
 pd_scid <- addmargins(table(pd_mrg$antidep_text, pd_mrg$SCID_Diagnosis_text, useNA = "always", dnn = c("Antidepressant exposure","SCID Diagnosis")), FUN = list(Total = sum))%>%
 as.data.frame.matrix() # Dsitribution of SCID diagnoses in the full sample  
 pd_scid <- pd_scid[-3,]
 colnames(pd_scid) <- make.names(colnames(pd_scid), unique = TRUE)
-pd_scid <- pd_scid %>% 
+pd_scid <- pd_scid %>%
 rownames_to_column(var = "antidep_exposure") %>% 
 mutate(phenotype = "Prescription_derived")
 pd_scid <- pd_scid %>% select(phenotype, everything())
+pd_scid <- pd_scid %>% 
+mutate(MDD_total = Recurrent.MDD + Single.MDD.Episode)
+
 write.table(pd_scid, paste0(outdir, "pd_scid_summary.tsv"), sep = "\t", row.names = F, quote =F )    
 # Both  
 all_scid_summary <- rbind(selfrep_scid, pd_scid)

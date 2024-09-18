@@ -21,7 +21,7 @@ SCRATCH='/exports/eddie/scratch/s2112198'
 pheno=$1
 sex=$2
 
-OUTPUTDIR="/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/MWAS_sex_segregated"
+OUTPUTDIR="/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/MWAS_sex_segregated/MOA_output/"
 RESIDDIR="/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/antidep_phenotypes/phenotypes/05_23_phenos/resid_phenos"
 
 pheno_filename="residualised_"${pheno}"_"${sex}"nocolnames.pheno"
@@ -32,4 +32,4 @@ output_filename="${OUTPUTDIR}/"${pheno}"_GRMunadj_ORM_residph_"${sex}"_16_09"
 
 echo "Output to be saved to file: ${output_filename}"
 
-osca --moa --befile $SCRATCH/mvals_GRM_uncorrected_29_06_OSCA_standard --pheno $SCRATCH/residualised_${pheno}_${sex}_nocolnames.pheno --qcovar $SCRATCH/qcovs_11_07_GRMFID_nocolnames --covar $SCRATCH/covs_11_07_GRMFID_nocolnames --thread-num 8 --out ${output_filename}
+osca --moa --befile $SCRATCH/mvals_GRM_uncorrected_29_06_OSCA_standard --pheno $SCRATCH/residualised_${pheno}_${sex}_nocolnames.pheno --qcovar $SCRATCH/qcovs_11_07_GRMFID_nocolnames --covar $SCRATCH/covs_11_07_GRMFID_${sex}_nocolnames --thread-num 8 --out ${output_filename}

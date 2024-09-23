@@ -77,3 +77,10 @@ write.table(pd_female, paste0(outdir, "residualised_antidep_pheno1_clean_appt_fe
 write.table(pd_male, paste0(outdir, "residualised_antidep_pheno1_clean_appt_male_nocolnames.pheno"), row.names =F, col.names = F, quote = F)
 write.table(sr_female, paste0(outdir, "residualised_selfrep_pheno3_female_nocolnames.pheno"), row.names =F, col.names = F, quote = F)
 write.table(sr_male, paste0(outdir, "residualised_selfrep_pheno3_male_nocolnames.pheno"), row.names =F, col.names = F, quote = F)
+
+# Save a list of the female and male IDs for standardising the OSCA methylation data per group
+sr_females <- sr_covs_raw %>% filter(!is.na(antidep) & sex_coded == 0) 
+sr_males <- sr_covs_raw %>% filter(!is.na(antidep) & sex_coded == 1)
+
+write.table(sr_females %>% select(FID, IID), paste0(outdir, "selfrep_females.list"), row.names = F, quote = F, col.names = F)
+write.table(sr_males %>% select(FID, IID), paste0(outdir, "selfrep_males.list"), row.names = F, quote = F, col.names = F)

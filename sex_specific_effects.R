@@ -59,7 +59,7 @@ female_MWAS <- MWAS_manhattan(female, 'Self report antidepressant exposure: Fema
 male_MWAS <- MWAS_manhattan(male, 'Self report antidepressant exposure: Males (n = 6821)')
 ggsave(filename = paste0(mwas_dir, 'selfrep_MWAS_female.png'), plot = female_MWAS, width = 8, height = 6, device='png', dpi=300)
 ggsave(filename = paste0(mwas_dir, 'selfrep_MWAS_male.png'), plot = male_MWAS, width = 8, height = 6, device='png', dpi=300)
-
+ggsave(filename=paste0(mwas_dir, "selfrep_sex_MWAS.png"), plot = ggarrange(female_MWAS, male_MWAS, nrow = 2, ncol = 1), width = 8, height = 6, device='png', dpi=300)
 # Comparison plot 
 
 comp_plot <- function(res1, res2, analysis1, analysis2, phenotype, probes){
@@ -87,19 +87,22 @@ print('Plotting')
 res1_sig <- res1 %>% dplyr::filter(Name %in% probes)
 num_signif <- nrow(res1_sig)
 comp_plt <- ggplot(results_long %>% dplyr::filter(Name %in% res1_sig$Name), aes(
-  x = b, y = reorder(Name, b), color = Analysis, shape = p < 0.05/num_signif)) + 
+  x = b, y = reorder(Name, b), color = Analysis)) + 
   geom_point(size = 2, position= position_dodge(width=0.5)) + 
   geom_errorbarh(aes(xmin = lowCI, xmax = highCI), height = 0, position= position_dodge(width=0.5)) + 
-  theme_minimal() +
+  theme_bw() +
   geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') + 
-  labs(y = 'CpG', x = 'Standardised Effect Size', title = paste0(
-         'Probes significant in the', phenotype), color = 'Phenotype')+guides(shape=guide_legend(title=paste0('p < 0.05/', num_signif)))
+  labs(y = 'CpG', x = 'Standardised Effect Size', color = 'Sex')
 
 return(list(comp_plt, results_long))
 }
 
-sex_comp <- comp_plot(male, female, "Male", "Female", phenotype = "Self-report", probes = female %>% filter(p < 9.42e-08) %>% pull(Name))
-sex_comp_plot <- sex_comp[[1]]
+# The probes that we want to zoom in on 
+# The probes which are significant in the main results 
+
+sig_probes <- c("cg26277237", "cg04173586", "cg08907118", "cg02183564", "cg15071067", "cg01964004", "cg03222540", "cg04315689")
+sex_comp <- comp_plot(male, female, "Male", "Female", phenotype = "Self-report", probes = sig_probes)
+sex_comp_plot <- sex_comp[[1]] + ggtitle("Effect estimates of self-report antidepressant exposure in Females and Males")
 ggsave(filename = paste0(mwas_dir, 'selfrep_sex_comp_signif.png'), plot = sex_comp[[1]], width = 8, height = 6, device='png', dpi=300)
 
 sex_comp_df <- sex_comp[[2]]
@@ -109,15 +112,47 @@ values_from = c("b", "se", "p", "lowSE", "highSE", "highCI", "lowCI"),
 names_sep = "_")
 
 
-sex_comp_df_wide <- sex_comp_df_wide %>% mutate(b_sexdiff = b_Male - b_Female)
-
-# Correlation plotn 
-
+# Correlation plot
 beta_cor_sex <- ggplot(sex_comp_df_wide, aes(x = b_Male, y = b_Female)) + 
 geom_point(alpha = 0.6)+geom_abline(slope = 1, intercept = 0, color = 'red', linetype = 'dashed') + 
-stat_cor()+ theme_minimal() + 
+stat_cor()+ theme_bw() + 
 theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+
-ggtitle('Self-report MWAS: Sex stratified analysis') + xlim(-0.15, 0.25) + ylim(-0.15, 0.25) + labs(x = 'CpG Effects: Male (n = 6, 821)', y = 'CpG Effects: Female (n =  9, 710)')
-# Calculate the Z scores of the effect estiamtes differences 
-mean(sex_comp_df_wide$b_sexdiff)
-sd(sex_comp_df$b_sexdiff)
+ggtitle('Self-report MWAS: Sex stratified analysis') + xlim(-0.05, 0.05) + ylim(-0.05, 0.05) + labs(x = 'CpG Effects: Male (n = 6, 821)', y = 'CpG Effects: Female (n =  9, 710)')
+ggsave(filename = paste0(mwas_dir, 'selfrep_sex_beta_cor.png'), plot = beta_cor_sex, width = 8, height = 6, device='png', dpi=300)
+
+# Correlation plot of the significant CpGs 
+beta_cor_sex_signif <- ggplot(sex_comp_df_wide %>% filter(Name %in% sig_probes), aes(x = b_Male, y = b_Female)) + 
+geom_point(alpha = 0.6)+geom_abline(slope = 1, intercept = 0, color = 'red', linetype = 'dashed') + 
+stat_cor()+ theme_bw() + 
+theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+
+ggtitle('Self-report MWAS: Sex stratified analysis') + xlim(0, 0.05) + ylim(0, 0.05)+
+labs(x = 'CpG Effects: Male (n = 6, 821)', y = 'CpG Effects: Female (n =  9, 710)') + 
+geom_text_repel(aes(label=Name))
+ggsave(filename = paste0(mwas_dir, 'selfrep_sex_beta_cor_signif.png'), plot = beta_cor_sex_signif, width = 8, height = 6, device='png', dpi=300)
+
+
+# Calculate the Z scores for the difference in effect estimates for each CpG
+sex_comp_df_wide <- sex_comp_df_wide %>% mutate(b_sexdiff = b_Male - b_Female,
+se_Male_sq = se_Male^2,
+se_Female_sq = se_Female^2,
+denom = sqrt(se_Male_sq + se_Female_sq),
+z_score = (b_sexdiff)/denom
+)
+# Plot the distribution of Z-scores 
+zscore <- ggplot(sex_comp_df_wide, aes(z_score)) + 
+geom_histogram() + 
+geom_vline(xintercept = -1.96, color = 'red', linetype='dashed')+
+geom_vline(xintercept = 1.96, color = 'red', linetype='dashed') + 
+labs(x = "Z-score of sex difference in effect estimates (self-report)", y = "Frequency")
+
+ggsave(filename = paste0(mwas_dir, 'selfrep_sex_zscore.png'), plot = zscore, width = 8, height = 6, device='png', dpi=300)
+
+# Plot the Z scores for the significant probes 
+zscore_signif <- ggplot(sex_comp_df_wide %>% filter(Name %in% sig_probes), aes(x = abs(z_score), y = Name, color = abs(z_score) >= 1.96)) +
+geom_point() + 
+theme_bw() + 
+labs(x = "Absolute Z-score", y = "CpG") + geom_vline(xintercept = 1.96, color = "red", linetype = "dashed") + 
+scale_color_manual(values=c("TRUE"="red", "FALSE"='black'))
+ggsave(filename = paste0(mwas_dir, 'selfrep_sex_zscore_signif.png'), plot = zscore_signif, width = 8, height = 6, device='png', dpi=300)
+
+table(sex_comp_df_wide$z_score > 1.96 | sex_comp_df_wide$z_score < -1.96)

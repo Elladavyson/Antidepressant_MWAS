@@ -10,17 +10,23 @@ library(ggpubr)
 # Self-reported antidepressant exposure 
 mwas_dir <- "/exports/igmm/eddie/GenScotDepression/users/edavyson/antidep_project/revisions/output/MWAS_sex_segregated/"
 # Read in the MWAS results
-male <- read.table(paste0(mwas_dir, "MOA_output/selfrep_pheno3_GRMunadj_ORM_residph_male_16_09.moa"), header = T)
-female <- read.table(paste0(mwas_dir, "MOA_output/selfrep_pheno3_GRMunadj_ORM_residph_female_16_09.moa"), header = T)
+male <- read.table(paste0(mwas_dir, "MOA_output/sex_standardised/selfrep_pheno3_GRMunadj_sexstd_ORM_residph_male_23_09.moa"), header = T)
+female <- read.table(paste0(mwas_dir, "MOA_output/sex_standardised/selfrep_pheno3_GRMunadj_sexstd_ORM_residph_female_23_09.moa"), header = T)
+
+old_male <- read.table(paste0(mwas_dir, "MOA_output/standardised_all/selfrep_pheno3_GRMunadj_ORM_residph_male_16_09.moa"), header = T)
+old_female <- read.table(paste0(mwas_dir, "MOA_output/standardised_all/selfrep_pheno3_GRMunadj_ORM_residph_female_16_09.moa"), header = T)
+
 # Formatting 
-female[female$Probe == 'cg07023494', 'Chr'] <- 7
-female[female$Probe == 'cg07023494', 'bp'] <- 158965466
-female <- female %>% dplyr::rename(Name = Probe)
-male[male$Probe == 'cg07023494', 'Chr'] <- 7
-male[male$Probe == 'cg07023494', 'bp'] <- 158965466
-male <- male %>% dplyr::rename(Name = Probe)
-female <- female %>% select(-c(Gene, Orientation))
-male <- male %>% select(-c(Gene, Orientation))
+format_sumstats <- function(sumstats) {
+  sumstats[sumstats$Probe == 'cg07023494', 'Chr'] <- 7
+  sumstats[sumstats$Probe == 'cg07023494', 'bp'] <- 158965466
+  sumstats <- sumstats %>% dplyr::rename(Name = Probe)
+  sumstats <- sumstats %>% select(-c(Gene, Orientation))
+}
+female <- format_sumstats(female)
+male <- format_sumstats(male)
+old_female <- format_sumstats(old_female)
+old_male <- format_sumstats(old_male)
 
 # MWAS plot function 
 MWAS_manhattan <- function(OSCA_results, plottitle, annot_level = 9.42e-08, start_var=NULL, end_var = NULL){
@@ -136,8 +142,13 @@ sex_comp_df_wide <- sex_comp_df_wide %>% mutate(b_sexdiff = b_Male - b_Female,
 se_Male_sq = se_Male^2,
 se_Female_sq = se_Female^2,
 denom = sqrt(se_Male_sq + se_Female_sq),
-z_score = (b_sexdiff)/denom
+z_score = (b_sexdiff)/denom,
+cum_prob = pnorm(z_score),
+sex_pval = ifelse(z_score < 0, 2*cum_prob, 2*(1-cum_prob))
 )
+# Calculate FDR P value 
+sex_comp_df_wide$sex_fdr_p <- p.adjust(sex_comp_df_wide$sex_pval, method = "fdr")
+
 # Plot the distribution of Z-scores 
 zscore <- ggplot(sex_comp_df_wide, aes(z_score)) + 
 geom_histogram() + 
@@ -156,3 +167,50 @@ scale_color_manual(values=c("TRUE"="red", "FALSE"='black'))
 ggsave(filename = paste0(mwas_dir, 'selfrep_sex_zscore_signif.png'), plot = zscore_signif, width = 8, height = 6, device='png', dpi=300)
 
 table(sex_comp_df_wide$z_score > 1.96 | sex_comp_df_wide$z_score < -1.96)
+
+# Plot the effect estimates between the old female summary statistics (standardised on both females + males) and the new (standardised on just females)
+
+female_stdcomp <- comp_plot(female, old_female, "standardisedfemaleonly", "standardisedall", phenotype = "Self Report", probes = sig_probes)
+male_stdcomp <- comp_plot(male, old_male, "standardisedmaleonly", "standardisedall", phenotype = "Self Report", probes = sig_probes)
+
+female_stdcomp_plot <- female_stdcomp[[1]] + ggtitle("Effect estimates of female self-report (standardised together or separately)")
+male_stdcomp_plot <- male_stdcomp[[1]] + ggtitle("Effect estimates of male self-report (standardised together or separately)")
+ggsave(filename = paste0(mwas_dir, 'selfrep_female_std_comp.png'), plot = female_stdcomp_plot, width = 8, height = 6, device='png', dpi=300)
+ggsave(filename = paste0(mwas_dir, 'selfrep_male_std_comp.png'), plot = male_stdcomp_plot, width = 8, height = 6, device='png', dpi=300)
+
+female_comp_df <- female_stdcomp[[2]]
+female_comp_df_wide <- female_comp_df %>% 
+pivot_wider(names_from = "Analysis", 
+values_from = c("b", "se", "p", "lowSE", "highSE", "highCI", "lowCI"), 
+names_sep = "_")
+
+male_comp_df <- male_stdcomp[[2]]
+male_comp_df_wide <- male_comp_df %>% 
+pivot_wider(names_from = "Analysis", 
+values_from = c("b", "se", "p", "lowSE", "highSE", "highCI", "lowCI"), 
+names_sep = "_")
+
+female_comp_beta_cor <- ggplot(female_comp_df_wide, aes(x = b_standardisedfemaleonly, y = b_standardisedall)) + 
+geom_point(alpha = 0.6)+geom_abline(slope = 1, intercept = 0, color = 'red', linetype = 'dashed') + 
+stat_cor()+ theme_bw() + 
+theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+
+ggtitle('Sex stratified analysis (Females): Standardisation') + xlim(-0.05, 0.05) + ylim(-0.05, 0.05) + labs(x = 'CpG Effects: Female standardised', y = 'CpG Effects: All standardised')
+ggsave(filename = paste0(mwas_dir, 'female_comp_beta_cor.png'), plot = female_comp_beta_cor, width = 8, height = 6, device='png', dpi=300)
+
+male_comp_beta_cor <- ggplot(male_comp_df_wide, aes(x = b_standardisedmaleonly, y = b_standardisedall)) + 
+geom_point(alpha = 0.6)+geom_abline(slope = 1, intercept = 0, color = 'red', linetype = 'dashed') + 
+stat_cor()+ theme_bw() + 
+theme(legend.position = 'right', plot.title= element_text(face = "bold", hjust = 0.5), axis.line = element_line(color = "black"), text = element_text(size = 12))+
+ggtitle('Sex stratified analysis (Males): Standardisation') + xlim(-0.05, 0.05) + ylim(-0.05, 0.05) + labs(x = 'CpG Effects: Male standardised', y = 'CpG Effects: All standardised')
+ggsave(filename = paste0(mwas_dir, 'male_comp_beta_cor.png'), plot = male_comp_beta_cor, width = 8, height = 6, device='png', dpi=300)
+
+#### Supplementary Tables #### 
+
+## Female MWAS (self-report) & Male MWAS 
+write.table(female %>% arrange(p), file=paste0(mwas_dir, "revisions_supp_tables.tsv"), sep = "\t", row.names = F, quote = F)
+# Male MWAS (self-report)
+write.table(male %>% arrange(p), file=paste0(mwas_dir,"revisions_supp_tables.tsv"), sep = "\t", row.names = F, quote = F)
+# Sex differences statistics 
+write.table(sex_comp_df_wide %>%
+ select(Chr, Name, bp, b_sexdiff, z_score, sex_pval, sex_fdr_p) %>% 
+ arrange(sex_pval), file=paste0(mwas_dir,"revisions_supp_tables.tsv"), sep = "\t", row.names = F, quote = F)

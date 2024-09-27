@@ -65,7 +65,7 @@ female_MWAS <- MWAS_manhattan(female, 'Self report antidepressant exposure: Fema
 male_MWAS <- MWAS_manhattan(male, 'Self report antidepressant exposure: Males (n = 6821)')
 ggsave(filename = paste0(mwas_dir, 'selfrep_MWAS_female.png'), plot = female_MWAS, width = 8, height = 6, device='png', dpi=300)
 ggsave(filename = paste0(mwas_dir, 'selfrep_MWAS_male.png'), plot = male_MWAS, width = 8, height = 6, device='png', dpi=300)
-ggsave(filename=paste0(mwas_dir, "selfrep_sex_MWAS.png"), plot = ggarrange(female_MWAS, male_MWAS, nrow = 2, ncol = 1), width = 8, height = 6, device='png', dpi=300)
+ggsave(filename=paste0(mwas_dir, "selfrep_sex_MWAS.png"),plot = ggarrange(female_MWAS, male_MWAS, nrow = 2, ncol = 1),width = 8, height = 6, device='png', dpi=300)
 # Comparison plot 
 
 comp_plot <- function(res1, res2, analysis1, analysis2, phenotype, probes){
@@ -105,6 +105,7 @@ return(list(comp_plt, results_long))
 
 # The probes that we want to zoom in on 
 # The probes which are significant in the main results 
+# Include the other one ? "cg08527546"
 
 sig_probes <- c("cg26277237", "cg04173586", "cg08907118", "cg02183564", "cg15071067", "cg01964004", "cg03222540", "cg04315689")
 sex_comp <- comp_plot(male, female, "Male", "Female", phenotype = "Self-report", probes = sig_probes)
@@ -136,12 +137,20 @@ labs(x = 'CpG Effects: Male (n = 6, 821)', y = 'CpG Effects: Female (n =  9, 710
 geom_text_repel(aes(label=Name))
 ggsave(filename = paste0(mwas_dir, 'selfrep_sex_beta_cor_signif.png'), plot = beta_cor_sex_signif, width = 8, height = 6, device='png', dpi=300)
 
+ggsave(filename = paste0(mwas_dir, 'selfrep_sex_beta_cor_both.png'), plot = 
+ggarrange(beta_cor_sex + ggtitle("Self-report sex-stratified analysis: All CpGs"), beta_cor_sex_signif + ggtitle("Self-report sex-stratified analysis: Significant CpGs"),
+nrow = 2, ncol = 1
+))
 
 # Calculate the Z scores for the difference in effect estimates for each CpG
+# Male n = 6821
+# Female n = 9710
 sex_comp_df_wide <- sex_comp_df_wide %>% mutate(b_sexdiff = b_Male - b_Female,
-se_Male_sq = se_Male^2,
-se_Female_sq = se_Female^2,
-denom = sqrt(se_Male_sq + se_Female_sq),
+sd_Male = se_Male*sqrt(6821),
+sd_Female = se_Female*sqrt(9170),
+sd_Male_sq = sd_Male^2,
+sd_Female_sq = sd_Female^2,
+denom = sqrt((sd_Male_sq/6821) + (sd_Female_sq/9170)),
 z_score = (b_sexdiff)/denom,
 cum_prob = pnorm(z_score),
 sex_pval = ifelse(z_score < 0, 2*cum_prob, 2*(1-cum_prob))
@@ -207,10 +216,10 @@ ggsave(filename = paste0(mwas_dir, 'male_comp_beta_cor.png'), plot = male_comp_b
 #### Supplementary Tables #### 
 
 ## Female MWAS (self-report) & Male MWAS 
-write.table(female %>% arrange(p), file=paste0(mwas_dir, "revisions_supp_tables.tsv"), sep = "\t", row.names = F, quote = F)
+write.table(female %>% arrange(p) %>% head(100), file=paste0(mwas_dir, "revisions_female_MWAS.tsv"), sep = "\t", row.names = F, quote = F)
 # Male MWAS (self-report)
-write.table(male %>% arrange(p), file=paste0(mwas_dir,"revisions_supp_tables.tsv"), sep = "\t", row.names = F, quote = F)
+write.table(male %>% arrange(p) %>% head(100), file=paste0(mwas_dir,"revisions_male_MWAS.tsv"), sep = "\t", row.names = F, quote = F)
 # Sex differences statistics 
 write.table(sex_comp_df_wide %>%
  select(Chr, Name, bp, b_sexdiff, z_score, sex_pval, sex_fdr_p) %>% 
- arrange(sex_pval), file=paste0(mwas_dir,"revisions_supp_tables.tsv"), sep = "\t", row.names = F, quote = F)
+ arrange(match(Name, sig_probes), sex_pval) %>% filter(sex_pval < 0.05), file=paste0(mwas_dir,"revisions_sex_differences.tsv"), sep = "\t", row.names = F, quote = F)

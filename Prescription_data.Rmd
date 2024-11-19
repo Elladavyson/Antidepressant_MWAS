@@ -1955,7 +1955,6 @@ upset_plot
 ### Demographic info 
 
 For demographic table : 
-
 Age
 Sex
 BMI

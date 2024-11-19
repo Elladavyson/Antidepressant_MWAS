@@ -1,6 +1,6 @@
-# Antidepressant_MWAS
+# Antidepressant_MWAS [![DOI](https://zenodo.org/badge/800071321.svg)](https://doi.org/10.5281/zenodo.14185885)
 Repository for the manuscript Insights from a Methylome-Wide Association Study of Antidepressant Exposure, currently available on medrxiv (https://www.medrxiv.org/content/10.1101/2024.05.01.24306640v1)
-[![DOI](https://zenodo.org/badge/800071321.svg)](https://doi.org/10.5281/zenodo.14185885)
+
 
 ## AD_MRS
 Sub repository including the scripts provided to external cohorts for calculating an antidepressant methylation profile score and testing it's association with antidepressant exposure. 

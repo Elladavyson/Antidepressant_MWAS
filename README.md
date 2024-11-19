@@ -1,5 +1,11 @@
 # Antidepressant_MWAS
-Repository for the manuscript "Insights from a Methylome-Wide Association Study of Antidepressant Exposure", currently available on medrxiv (https://www.medrxiv.org/content/10.1101/2024.05.01.24306640v1)
+Repository for the manuscript Insights from a Methylome-Wide Association Study of Antidepressant Exposure, currently available on medrxiv (https://www.medrxiv.org/content/10.1101/2024.05.01.24306640v1)
+
+## AD_MRS
+Sub repository including the scripts provided to external cohorts for calculating an antidepressant methylation profile score and testing it's association with antidepressant exposure. 
+
+## Revisions 
+Sub repository for coding work in the revisions process at Nature Communications. 
 
 ## Phenotypes and covariates 
 

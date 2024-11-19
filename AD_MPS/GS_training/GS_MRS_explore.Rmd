@@ -1,0 +1,252 @@
+---
+title: "MRS_results"
+author: "Ella Davyson"
+date: "2023-11-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Generating MRS weights (LASSO)
+
+Looking at the CpGs involved in the score:
+
+```{r, echo = FALSE}
+library(data.table)
+library(dplyr)
+library(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
+
+weights <- read.table('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/MRS/biglasso/big_lasso_450K_selfrep.txt', header = F)
+colnames(weights) <- c('CpG', 'Weight')
+
+# discard the intercept 
+
+weights <- weights[-1,]
+
+# distribution of the effect sizes 
+
+summary(weights$Weight)
+ggplot(weights, aes(x = Weight)) + geom_histogram() + theme_minimal()
+
+```
+
+Annotating the CpGs: 
+
+```{r}
+# annotate the CpGs 
+annot <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b4.hg19) %>% as.data.frame()
+
+annot_rel <- annot %>% dplyr::select(Name, chr, pos, Relation_to_Island, Islands_Name, UCSC_RefGene_Name, UCSC_RefGene_Accession, UCSC_RefGene_Group)
+
+weights_annot <- merge(weights, annot_rel, by.x = 'CpG', by.y = 'Name')
+
+table(weights_annot$chr)
+
+## label the CpGs on the self-reported MWAS plot 
+## Reading in the self-report MWAS results 
+selfrep_ph3_res <- read_table('/Volumes/igmm//GenScotDepression/users/edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/GRM_unadjusted_selfrep_pheno3_MOA_ORM_residph_standard_06_10.moa') %>% as.data.frame()
+
+# annotate the CpG which was unannotated from GRM_corrected.opi file
+
+selfrep_ph3_res[selfrep_ph3_res$Probe == 'cg07023494', 'Chr'] <- 7
+selfrep_ph3_res[selfrep_ph3_res$Probe == 'cg07023494', 'bp'] <- 158965466
+selfrep_ph3_res <- selfrep_ph3_res %>% dplyr::rename(Name = Probe)
+
+## MWAS plot
+selfrep_ph3_res_format <- selfrep_ph3_res %>% 
+  #compute chromosome size 
+  group_by(Chr) %>%
+  reframe(chr_len = max(bp)) %>%
+  
+  #Calculate the cumulative position of each chromosome 
+  mutate(tot = cumsum(as.numeric(chr_len))-as.numeric(chr_len)) %>%
+  dplyr::select(-chr_len) %>%
+  
+  #add this info to the original data set of sum stats 
+  left_join(selfrep_ph3_res, ., by = c('Chr'='Chr')) %>%
+  
+  #add the cumulative position of each SNP 
+  arrange(Chr,bp) %>% 
+  mutate( BPcum = bp + tot)
+
+axisdf = selfrep_ph3_res_format %>% group_by(Chr) %>% reframe(center=(max(BPcum) +min(BPcum))/2)
+
+selfrep_ph3_res_signif <- selfrep_ph3_res_format %>% dplyr::filter(p < 9.42e-08)
+selfrep_ph3_res_MPS <- merge(selfrep_ph3_res_format, weights, by.x = 'Name',  by.y = 'CpG') 
+
+MWAS_MPSlabel <- ggplot(selfrep_ph3_res_format, aes(x = BPcum, y = -log10(p)))+geom_point(alpha = ifelse(selfrep_ph3_res_format$p < 9.42e-08, 1,0.8), size = 1.3, color = 'lightgray') +  geom_point(data = selfrep_ph3_res_MPS, aes(x = BPcum, y = -log10(p), color = 'lightgreen', size = Weight))+
+  #custom x axis 
+  
+  scale_x_continuous(label=axisdf$Chr, breaks= axisdf$center) + 
+  scale_y_continuous(expand = c(0,0), limits = c(0,max(-log10(selfrep_ph3_res$p))+2)) +
+  geom_text_repel(data = selfrep_ph3_res_MPS, aes(label = Name), size = 3)+
+  geom_hline(yintercept = -log10(9.42e-08), linetype = 'dashed') +
+  theme_bw() + theme( panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), plot.title= element_text(face = "bold", hjust = 0.5)) + 
+  labs(x = 'Chromosome', title = 'Self-reported antidepressant exposure MWAS: CpGs included in the Methylation Profile Score') +  scale_color_manual(values = c("lightgreen"), guide = 'none')+ scale_size_continuous(guide = guide_legend(override.aes = list(color = "lightgreen")))
+
+MWASp_vsMPSbeta <- ggplot(selfrep_ph3_res_MPS, aes(x = -log10(p), y = abs(Weight))) + geom_point() + geom_vline(xintercept = -log10(9.42e-08), linetype = 'dashed', color = 'red') + theme_minimal() + 
+  labs(x = '-log10(P) in the Self-report MWAS', 
+       y = 'Absolute Weight (Methylation Profile Score)') +  theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"))
+
+MWASbeta_vsMPSbeta <- ggplot(selfrep_ph3_res_MPS, aes(x = abs(b), y = abs(Weight))) + geom_point() + theme_minimal() + 
+  labs(x = 'Absolute Beta in the Self-report MWAS', 
+       y = 'Absolute Weight (Methylation Profile Score)') +  theme( 
+        axis.line = element_line(colour = "black"),
+        axis.text.y = element_text(size = 12, colour = "black"),
+        axis.text.x.bottom = element_text(size = 12, colour = "black"),
+        axis.title.x = element_text(size = 12, colour = "black"))
+```
+
+## Overlap of the CpGs with the OSCA self-report and OSCA prescription derived sets ? 
+
+
+```{r}
+sr_cpgs <- readr::read_lines('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/selfrep_ph3_top100_CpGs_26_10.txt')
+pd_cpgs <- readr::read_lines('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/OSCA_results/GRM_unadjusted_10_standardised/06_10_update/antidep_ph1_top100_CpGs_26_10.txt')
+
+######################################################
+
+#CpG lists -hypergeometric tests between LASSO and OSCA CpGs (top 100)
+
+######################################################
+# total number of CpGs #total number of cpgs fed into the lasso model : N = 365, 912
+
+cpg_phyper <- function(cpgs_A, cpgs_B, totalN, cpglab_A, cpglab_B){
+  cpg_overlap <- intersect(cpgs_A, cpgs_B)
+  
+# phyper: phyper(Overlap-1, group2, Total-group2, group1,lower.tail= FALSE)
+  hyper_res <- phyper(length(cpg_overlap)-1, length(cpgs_B), totalN-length(cpgs_B),length(cpgs_A), lower.tail = FALSE)
+  res <- data.table(list1 = cpglab_A, list2= cpglab_B, N_list1 = length(cpgs_A), N_list2 = length(cpgs_B), Total = totalN, phyper_p = hyper_res)
+  return(res)
+}
+
+rbind(cpg_phyper(sr_cpgs, weights$CpG, totalN = 365912, 'Self-report', 'LASSO'), cpg_phyper(pd_cpgs, weights$CpG, totalN = 365912, 'Prescription-derived', 'LASSO'))
+
+######################################################
+
+# Venn Diagrams 
+
+######################################################
+
+sr_lasso_cpgs <- list(sr_cpgs, weights$CpG)
+names(sr_lasso_cpgs) <- c('SR', 'LASSO')
+
+pd_lasso_cpgs <- list(pd_cpgs, weights$CpG)
+names(pd_lasso_cpgs) <- c('PD', 'LASSO')
+
+png(filename = "/Users/ellad/UniversityEdinburgh/PhD/antidep_methylation/Writing/Supplementary Info/supp_plots/top100cpgs_venndir_LASSO.png", width = 8, height = 6, units = "in", res = 300)
+
+venndir(sr_lasso_cpgs, proportional = TRUE, overlap_type="overlap", label_preset="main items", show_items = "item", item_cex = 1)
+venndir(pd_lasso_cpgs, proportional = TRUE, overlap_type="overlap", label_preset="main items", show_items = "item", item_cex = 1)
+
+dev.off()
+
+
+
+```
+
+## EWAS query for the 212 CpGs
+
+09/02 URL kept reaching time out ? 
+
+Supplementary table: The CpGs and their weights which make up the methylation profile score and if they have been associated with other traits in EWAS studies previously. 
+
+```{r}
+CPG_query <- function(cpg) {
+  result <- tryCatch({
+    query <- ewascatalog(cpg)
+    if (nrow(query) == 0) {
+      return(NA)
+    } else {
+      return(query)
+    }
+  }, error = function(e) {
+    return(NA)
+  })
+  return(result)
+}
+
+
+EWAS_query <- function(cpgs) {
+  ewas_catalog_df <- data.frame(cpg = 1:length(cpgs), cpg_traits = NA, gene = NA, pmid = NA, trait_pmid = NA)
+  for (i in 1:length(cpgs)){
+  cpg_name <- cpgs[i]
+  print(cpg_name)
+  query_res <- CPG_query(cpg= cpg_name)
+  if (all(is.na(query_res))|| !is.data.frame(query_res)) {
+  ewas_catalog_df[i, 'cpg'] <- cpg_name
+
+  } else {
+    # filter so looking at studies of > 1000 people and order by 
+  query_res <- query_res %>% dplyr::filter(n > 1000) %>% group_by(trait) %>% arrange(desc(n)) %>% slice(1:1) %>% as.data.frame()
+  traits <- unique(query_res$trait)
+  genes <- unique(query_res$gene) 
+  PMIDs <- query_res %>% dplyr::filter(trait %in% traits) %>% pull(pmid)
+  combined <- paste(traits, " (", PMIDs, ")", sep = "")
+  ewas_catalog_df[i, 'cpg'] <- cpg_name
+  ewas_catalog_df[i, 'cpg_traits'] <- paste(traits, collapse = ',\n')
+  ewas_catalog_df[i, 'gene'] <- paste(genes, collapse = ',')
+  ewas_catalog_df[i, 'pmid'] <- paste(PMIDs, collapse = ':')
+  ewas_catalog_df[i, 'trait_pmid'] <- paste(combined, collapse = ' : ')
+  
+  }
+  }
+  return(ewas_catalog_df)
+}
+
+weights <- weights %>% arrange(Weight)
+# do this a section at a time
+# at 93 CpGs the connection to the website times out 
+# getting suspicious of the multiple connections from the same source? 
+MPS_cpgs_df <- list()
+for (i in 1:length(weights$CpG)){
+  print(i)
+  cpg <- weights$CpG[i]
+  cpg_query <- EWAS_query(cpg)
+  MPS_cpgs_df[[i]] <- cpg_query
+}
+
+MPS_cpgs_df_comb <- do.call(rbind, MPS_cpgs_df)
+
+```
+
+
+# MRS in Generation Scotland 
+
+Generated MRS in GS using the MRS_calc.R script.
+
+```{r}
+
+# Read in the MRS 
+
+GS_MRS <- read.table('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/MRS/GS_testing/test_makeMRS/GS_AD_MRS.txt', header = T)
+
+# read in the phenotype 
+
+selfrep_pheno <- read.csv('/Volumes/igmm/GenScotDepression/users/edavyson/Antidep_methylation/antidep_phenotypes/selfreport/selfrep_pheno3_methyl_03_05.csv', header = T)
+selfrep_pheno <- selfrep_pheno %>% filter(!is.na(antidep))
+print(paste0('Read in the Antidepressant exposure phenotype for ', 'GS', ': Number of cases: ',
+             nrow(selfrep_pheno %>% 
+                    filter(antidep==1)), 
+             ' Number of controls: ',
+             nrow(selfrep_pheno%>% 
+                    filter(antidep==0))))
+selfrep_pheno_MRS <- merge(selfrep_pheno, MRS, by = 'IID')
+
+print('Plotting MRS distributions for AD exposure cases and controls ')
+MRS_pheno_dists <- ggplot(selfrep_pheno_MRS, aes(x = AD_MRS, fill = as.factor(antidep))) + 
+  geom_histogram(alpha = 0.8) + 
+  theme_minimal() + 
+  labs(x = 'Methylation Risk Score', y = 'Count', fill = 'Self-reported AD use') +
+  ggtitle('Generation Scotland')
+
+MRS_pheno_dists
+
+```
+

@@ -1,5 +1,5 @@
 # Antidepressant_MWAS [![DOI](https://zenodo.org/badge/800071321.svg)](https://doi.org/10.5281/zenodo.14185885)
-Repository for the manuscript Insights from a Methylome-Wide Association Study of Antidepressant Exposure, currently available on medrxiv (https://www.medrxiv.org/content/10.1101/2024.05.01.24306640v1)
+Repository for the manuscript:  Insights from a Methylome-Wide Association Study of Antidepressant Exposure, published at *Nature Communications* ([https://www.nature.com/articles/s41467-024-55356-x])
 
 
 ## AD_MRS
